@@ -1,4 +1,3 @@
-# azsearch.github.io
 Azure Cognitive / AI Search
 This repository demonstrates how to build intelligent search solutions using Microsoft Azure AI Search (formerly Azure Cognitive Search).
 
