@@ -1,0 +1,1977 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Azure AI Search Index - Developer Deep Dive</title>
+<style>
+/* ============================================================
+   THEME TOKENS (3 professional light themes, no dark/matrix)
+   ============================================================ */
+:root {
+  --font-sans: "Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "Cascadia Code", "Consolas", "SF Mono", Menlo, monospace;
+  --radius: 14px;
+  --radius-sm: 8px;
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, .08), 0 1px 2px rgba(15, 23, 42, .06);
+  --shadow-md: 0 10px 25px rgba(15, 23, 42, .10), 0 4px 10px rgba(15, 23, 42, .06);
+  --shadow-lg: 0 24px 60px rgba(15, 23, 42, .16);
+  --maxw: 1180px;
+}
+
+/* Theme 1 - Corporate Blue (default) */
+[data-theme="blue"] {
+  --bg: #eef2f9;
+  --bg-grad-1: #e8eefb;
+  --bg-grad-2: #f4f7fc;
+  --surface: #ffffff;
+  --surface-2: #f5f8ff;
+  --ink: #16233b;
+  --ink-soft: #43536e;
+  --muted: #6b7a94;
+  --border: #dbe3f1;
+  --primary: #1f5fd6;
+  --primary-2: #2f79f0;
+  --primary-strong: #16418f;
+  --accent: #0aa2c0;
+  --ok: #1b8a5a;
+  --warn: #b7791f;
+  --danger: #c0392b;
+  --code-bg: #0f1b33;
+  --code-ink: #e7edf9;
+  --chip: #e6eefc;
+  --chip-ink: #1f5fd6;
+}
+
+/* Theme 2 - Teal / Green */
+[data-theme="teal"] {
+  --bg: #eaf5f1;
+  --bg-grad-1: #e3f3ec;
+  --bg-grad-2: #f2faf6;
+  --surface: #ffffff;
+  --surface-2: #f2fbf7;
+  --ink: #13322a;
+  --ink-soft: #3b5a50;
+  --muted: #5f7f75;
+  --border: #d4e8df;
+  --primary: #0e8f6e;
+  --primary-2: #14a884;
+  --primary-strong: #0a5f4a;
+  --accent: #1f7a8c;
+  --ok: #1b8a5a;
+  --warn: #b7791f;
+  --danger: #c0392b;
+  --code-bg: #0d2a24;
+  --code-ink: #e6f4ee;
+  --chip: #dcf1e8;
+  --chip-ink: #0e8f6e;
+}
+
+/* Theme 3 - Warm Slate */
+[data-theme="slate"] {
+  --bg: #f2efec;
+  --bg-grad-1: #efeae5;
+  --bg-grad-2: #f8f5f2;
+  --surface: #ffffff;
+  --surface-2: #faf7f4;
+  --ink: #2b2622;
+  --ink-soft: #554d45;
+  --muted: #857a70;
+  --border: #e6ded6;
+  --primary: #b4531f;
+  --primary-2: #cf6a34;
+  --primary-strong: #843a12;
+  --accent: #6b5b95;
+  --ok: #1b8a5a;
+  --warn: #b7791f;
+  --danger: #c0392b;
+  --code-bg: #2b2622;
+  --code-ink: #f3ede7;
+  --chip: #f0e5db;
+  --chip-ink: #b4531f;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: var(--ink);
+  background: radial-gradient(1200px 700px at 15% -10%, var(--bg-grad-1), transparent 60%),
+              radial-gradient(1000px 600px at 100% 0%, var(--bg-grad-2), transparent 55%),
+              var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================================
+   TOP BAR
+   ============================================================ */
+.topbar {
+  position: fixed; inset: 0 0 auto 0; height: 58px; z-index: 50;
+  display: flex; align-items: center; gap: 14px;
+  padding: 0 20px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: saturate(180%) blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .2px; }
+.brand .logo {
+  width: 30px; height: 30px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  display: grid; place-items: center; color: #fff; font-size: 15px; box-shadow: var(--shadow-sm);
+}
+.brand small { display: block; font-weight: 500; color: var(--muted); font-size: 11px; }
+.spacer { flex: 1; }
+
+.themes { display: flex; align-items: center; gap: 8px; }
+.themes .lbl { font-size: 12px; color: var(--muted); margin-right: 2px; }
+.swatch {
+  width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--border), var(--shadow-sm); cursor: pointer; padding: 0;
+}
+.swatch.active { outline: 2px solid var(--ink); outline-offset: 2px; }
+.sw-blue { background: linear-gradient(135deg, #1f5fd6, #0aa2c0); }
+.sw-teal { background: linear-gradient(135deg, #0e8f6e, #1f7a8c); }
+.sw-slate { background: linear-gradient(135deg, #b4531f, #6b5b95); }
+
+.topbtn {
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink-soft);
+  border-radius: 999px; padding: 7px 14px; font-size: 13px; cursor: pointer; font-weight: 600;
+}
+.topbtn:hover { border-color: var(--primary); color: var(--primary); }
+
+/* ============================================================
+   PROGRESS
+   ============================================================ */
+.progress { position: fixed; top: 58px; left: 0; right: 0; height: 3px; z-index: 49; background: transparent; }
+.progress > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--primary), var(--accent)); transition: width .25s ease; }
+
+/* ============================================================
+   STAGE / SLIDES
+   ============================================================ */
+.stage { padding: 92px 20px 110px; min-height: 100vh; }
+.slide {
+  display: none;
+  max-width: var(--maxw); margin: 0 auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  padding: 44px 52px 48px;
+  min-height: 74vh;
+  animation: fade .18s ease;
+}
+.slide.active { display: block; }
+.slide > * { min-width: 0; }
+@keyframes fade { from { opacity: 0; transform: translateY(6px);} to { opacity: 1; transform: none; } }
+
+.kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.3px;
+  color: var(--primary); background: var(--chip); padding: 6px 12px; border-radius: 999px;
+}
+.slide h1 { font-size: 40px; line-height: 1.1; margin: 18px 0 10px; letter-spacing: -.5px; }
+.slide h2 { font-size: 30px; line-height: 1.15; margin: 16px 0 8px; letter-spacing: -.3px; }
+.slide h3 { font-size: 19px; margin: 22px 0 8px; color: var(--ink); }
+.lead { font-size: 18px; color: var(--ink-soft); line-height: 1.6; max-width: 62ch; }
+p { line-height: 1.65; color: var(--ink-soft); }
+ul, ol { line-height: 1.7; color: var(--ink-soft); padding-left: 22px; }
+li { margin: 5px 0; }
+strong { color: var(--ink); }
+a { color: var(--primary); }
+
+.hr { height: 1px; background: var(--border); margin: 22px 0; border: 0; }
+
+/* Cover slide */
+.cover { display: grid; place-content: center; text-align: center; min-height: 74vh; }
+.cover .big {
+  font-size: 58px; line-height: 1.05; letter-spacing: -1px; margin: 12px 0 8px;
+  background: linear-gradient(120deg, var(--primary-strong), var(--accent));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.cover p { font-size: 20px; max-width: 60ch; margin: 6px auto; }
+.cover .meta { margin-top: 26px; color: var(--muted); font-size: 14px; }
+
+/* chips / tags */
+.chip { display: inline-block; font-size: 12px; font-weight: 600; color: var(--chip-ink); background: var(--chip); border-radius: 999px; padding: 4px 11px; margin: 3px 4px 3px 0; }
+.chip.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.chip.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.chip.danger { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+
+/* grids & cards */
+.grid { display: grid; gap: 16px; }
+.grid.c2 { grid-template-columns: 1fr 1fr; }
+.grid.c3 { grid-template-columns: repeat(3, 1fr); }
+.grid.c4 { grid-template-columns: repeat(4, 1fr); }
+.grid > * { min-width: 0; }
+.card {
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 18px 18px; box-shadow: var(--shadow-sm);
+  min-width: 0;
+}
+.card h3 { margin: 0 0 6px; font-size: 16px; }
+.card p, .card ul { font-size: 14px; margin: 6px 0 0; }
+.card .ico { font-size: 22px; }
+
+.callout {
+  border-left: 4px solid var(--primary); background: var(--surface-2);
+  padding: 14px 18px; border-radius: 10px; margin: 16px 0;
+  min-width: 0;
+}
+.callout.tip { border-color: var(--ok); }
+.callout.warn { border-color: var(--warn); }
+.callout.danger { border-color: var(--danger); }
+.callout .t { font-weight: 700; color: var(--ink); display: block; margin-bottom: 4px; }
+.callout p { margin: 0; font-size: 14.5px; }
+
+/* code */
+pre {
+  background: var(--code-bg); color: var(--code-ink);
+  border-radius: 12px; padding: 16px 18px; overflow: auto; font-size: 13.5px; line-height: 1.55;
+  font-family: var(--font-mono); box-shadow: var(--shadow-sm); margin: 12px 0;
+  max-width: 100%;
+}
+pre .k { color: #8ec7ff; }         /* keys/keywords */
+pre .s { color: #a5e3a0; }         /* strings */
+pre .n { color: #ffcf8a; }         /* numbers */
+pre .c { color: #8a95a8; font-style: italic; } /* comments */
+pre .m { color: #ff9a8a; font-weight: 600; }   /* http method */
+code.inline {
+  font-family: var(--font-mono); font-size: .9em; background: var(--chip);
+  color: var(--chip-ink); padding: 2px 7px; border-radius: 6px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.pillrow { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+
+/* tables */
+table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14px; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { background: var(--surface-2); color: var(--ink); font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: .4px; }
+tr:hover td { background: color-mix(in srgb, var(--primary) 4%, transparent); }
+td code, th code { font-family: var(--font-mono); font-size: 12.5px; }
+th, td, p, li { overflow-wrap: anywhere; }
+
+.method { font-family: var(--font-mono); font-weight: 700; font-size: 12px; padding: 3px 8px; border-radius: 6px; color: #fff; }
+.m-get { background: #1b8a5a; }
+.m-post { background: #1f5fd6; }
+.m-put { background: #b7791f; }
+.m-del { background: #c0392b; }
+
+/* two-column layout helper */
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
+.split.wide-left { grid-template-columns: 1.3fr 1fr; }
+.split > * { min-width: 0; }
+
+/* ============================================================
+   BOTTOM NAV
+   ============================================================ */
+.nav {
+  position: fixed; inset: auto 0 0 0; z-index: 50; height: 68px;
+  display: flex; align-items: center; gap: 14px; padding: 0 20px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: saturate(180%) blur(10px);
+  border-top: 1px solid var(--border);
+}
+.navbtn {
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink);
+  border-radius: 10px; padding: 10px 16px; cursor: pointer; font-weight: 600; font-size: 14px;
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.navbtn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+.navbtn:disabled { opacity: .4; cursor: not-allowed; }
+.counter { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; }
+.title-mini { font-weight: 600; color: var(--ink-soft); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* agenda overview */
+.toc { columns: 2; column-gap: 30px; }
+.toc a { display: block; text-decoration: none; color: var(--ink-soft); padding: 7px 10px; border-radius: 8px; break-inside: avoid; font-size: 14.5px; }
+.toc a:hover { background: var(--surface-2); color: var(--primary); }
+.toc a b { color: var(--primary); font-variant-numeric: tabular-nums; margin-right: 8px; }
+
+/* overlay grid (agenda button) */
+.overlay { position: fixed; inset: 0; z-index: 60; background: rgba(15,23,42,.45); display: none; padding: 40px; overflow: auto; }
+.overlay.open { display: block; }
+.overlay .panel { max-width: 1000px; margin: 0 auto; background: var(--surface); border-radius: var(--radius); padding: 26px 30px; box-shadow: var(--shadow-lg); }
+.overlay h2 { margin-top: 0; }
+.closex { float: right; border: none; background: var(--surface-2); border-radius: 8px; width: 34px; height: 34px; cursor: pointer; font-size: 18px; color: var(--ink-soft); }
+
+.small { font-size: 13px; color: var(--muted); }
+.mono { font-family: var(--font-mono); }
+.nowrap { white-space: nowrap; }
+
+@media (max-width: 900px) {
+  .slide { padding: 30px 22px 36px; }
+  .grid.c2, .grid.c3, .grid.c4, .split, .split.wide-left { grid-template-columns: 1fr; }
+  .toc { columns: 1; }
+  .slide h1 { font-size: 30px; }
+  .cover .big { font-size: 38px; }
+  .title-mini { display: none; }
+}
+
+/* print */
+@media print {
+  .topbar, .nav, .progress, .overlay { display: none !important; }
+  .slide { display: block !important; page-break-after: always; box-shadow: none; border: none; min-height: auto; }
+  body { background: #fff; }
+}
+</style>
+</head>
+<body data-theme="blue">
+
+<!-- ================= TOP BAR ================= -->
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">⌕</span>
+    <div>Azure AI Search Index<br><small>Developer Forum - Deep Dive</small></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="themes">
+    <span class="lbl">Theme</span>
+    <button class="swatch sw-blue active" data-set="blue" title="Corporate Blue"></button>
+    <button class="swatch sw-teal" data-set="teal" title="Teal / Green"></button>
+    <button class="swatch sw-slate" data-set="slate" title="Warm Slate"></button>
+  </div>
+  <button class="topbtn" id="agendaBtn">☰ Agenda</button>
+</header>
+<div class="progress"><i id="bar"></i></div>
+
+<!-- ================= AGENDA OVERLAY ================= -->
+<div class="overlay" id="overlay">
+  <div class="panel">
+    <button class="closex" id="closeOverlay">×</button>
+    <h2>Full Agenda</h2>
+    <p class="small">Click any topic to jump directly to that slide.</p>
+    <div class="toc" id="tocList"></div>
+  </div>
+</div>
+
+<!-- ================= STAGE ================= -->
+<main class="stage" id="stage">
+
+<!-- 1. COVER -->
+<section class="slide active" data-title="Welcome">
+  <div class="cover">
+    <span class="kicker" style="justify-self:center">AI Search</span>
+    <div class="big">Azure AI Search Index<br>End-to-End Developer Deep Dive</div>
+    <p>A step-by-step, hands-on walkthrough of designing indexes, tuning text analysis, and mastering OData queries &amp; the Search REST API with Postman.</p>
+    <div class="meta">Proof-of-Concept Demo &nbsp;·&nbsp; 28 Topics &nbsp;·&nbsp; Use <b>← →</b> keys or the buttons below to navigate</div>
+  </div>
+</section>
+
+<!-- 2. AGENDA -->
+<section class="slide" data-title="Agenda">
+  <span class="kicker">Roadmap</span>
+  <h1>What we will be covering</h1>
+  <p class="lead">From "what &amp; why" fundamentals, through index anatomy and text analysis, to real Postman API calls, OData filters, and edge cases like special characters.</p>
+  <div class="toc" id="tocInline"></div>
+</section>
+
+<!-- 3. INTRO -->
+<section class="slide" data-title="What & Why is Azure AI Search">
+  <span class="kicker">01 · Foundations</span>
+  <h1>What is Azure AI Search &amp; why do we need it?</h1>
+  <p class="lead">Azure AI Search (formerly "Azure Cognitive Search / Azure Search Service") is a fully managed <strong>search-as-a-service</strong>. You push data into an <strong>index</strong> - a search-optimized copy of your DB data - and query it with rich full-text, filter, sort, facet and AI capabilities.</p>
+  <div class="split">
+    <div>
+      <h3>The problem it solves</h3>
+      <ul>
+        <li>Relational <code class="inline">LIKE '%term%'</code> queries don't scale and can't rank by relevance.</li>
+        <li>Users expect Google-like search: typo tolerance, synonyms, partial matches, ranking.</li>
+        <li>Data lives across SQL, Cosmos DB, Blob, APIs - you need one queryable surface.</li>
+      </ul>
+      <h3>What an index gives you</h3>
+      <ul>
+        <li><strong>Inverted index</strong> for millisecond full-text search over millions of docs.</li>
+        <li><strong>Relevance scoring</strong> (BM25) out of the box.</li>
+        <li><strong>Filters, sorting, facets, suggestions &amp; autocomplete.</strong></li>
+      </ul>
+    </div>
+    <div>
+      <div class="card">
+        <div class="ico">🧭</div>
+        <h3>Mental model</h3>
+        <p>Think of the index like a book's index at the back: instead of reading every page (row scan), you jump straight to the pages (documents) that contain your term - pre-computed and ranked.</p>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <div class="ico">⚙️</div>
+        <h3>Core building blocks</h3>
+        <p class="pillrow">
+          <span class="chip">Index</span><span class="chip">Fields</span><span class="chip">Analyzers</span>
+          <span class="chip">Documents</span><span class="chip">Scoring Profiles</span><span class="chip">Suggesters</span>
+        </p>
+      </div>
+      <div class="callout tip"><span class="t">Why not just a database?</span><p>A database is optimized for <em>transactions &amp; exact lookups</em>. A search index is optimized for <em>language, relevance, and read-heavy discovery</em>. They complement each other - the DB is the system of record; the index is the query surface.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 4. ToLower -->
+<section class="slide" data-title="Why ToLower for string fields">
+  <span class="kicker">02 · Data Hygiene</span>
+  <h1>Why lower-case (normalize) string fields?</h1>
+  <p class="lead">Two different behaviours are at play - <strong>full-text search</strong> (already case-insensitive) vs <strong>filters</strong> (<code class="inline">$filter</code>, which are <em>case-SENSITIVE</em> and exact). Normalizing to lower-case on ingestion protects you from the second trap.</p>
+  <div class="split">
+    <div>
+      <h3>The trap: filters are exact &amp; case-sensitive</h3>
+      <pre><span class="c">// Document stored as "Active"</span>
+$filter=status eq '<span class="s">active</span>'   <span class="c">// ❌ returns NOTHING</span>
+$filter=status eq '<span class="s">Active</span>'   <span class="c">// ✅ matches</span></pre>
+      <p>Full-text search (<code class="inline">search=</code>) lower-cases via the analyzer, so it "just works". But <code class="inline">$filter</code>, <code class="inline">$orderby</code>, facets &amp; keys do <strong>byte-exact</strong> comparisons.</p>
+    </div>
+    <div>
+      <h3>The fix - two options</h3>
+      <ol>
+        <li><strong>Normalize on write:</strong> lower-case values in your data loader (deterministic, works everywhere, no query change).</li>
+        <li><strong>Normalizers (index-side):</strong> attach a <code class="inline">normalizer</code> to filterable/sortable fields so Azure lower-cases at filter time.</li>
+      </ol>
+      <pre><span class="k">"normalizers"</span>: [{
+  <span class="k">"name"</span>: <span class="s">"lowercase_norm"</span>,
+  <span class="k">"@odata.type"</span>: <span class="s">"#Microsoft.Azure.Search.CustomNormalizer"</span>,
+  <span class="k">"tokenFilters"</span>: [<span class="s">"lowercase"</span>]
+}]</pre>
+      <div class="callout tip"><span class="t">Best practice</span><p>Do <strong>both</strong>: normalize in the loader for predictable data, and add a lowercase normalizer as a safety net for ad-hoc writes.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 5. Id / Key -->
+<section class="slide" data-title="Why not search via the Id key field">
+  <span class="kicker">03 · The Key Field</span>
+  <h1>Why you shouldn't "search" the <code class="inline">Id</code> key - &amp; its constraints</h1>
+  <p class="lead">Every index needs exactly one <strong>key</strong> field (usually <code class="inline">Id</code>). It uniquely identifies a document and drives merge/upload/delete - but it is a poor <em>search</em> target.</p>
+  <div class="split wide-left">
+    <div>
+      <h3>Hard constraints on the key field</h3>
+      <table>
+        <tr><th>Rule</th><th>Detail</th></tr>
+        <tr><td>Type</td><td>Must be <code>Edm.String</code>.</td></tr>
+        <tr><td>Cardinality</td><td>Exactly <strong>one</strong> key per index.</td></tr>
+        <tr><td>Uniqueness</td><td>Must be unique - it's the document identity.</td></tr>
+        <tr><td>Allowed chars</td><td>Letters, digits, <code>_</code>, <code>-</code>, <code>=</code> only. No spaces, <code>/</code>, <code>#</code>, unicode, etc.</td></tr>
+        <tr><td>Facets/Sort</td><td>Key <strong>cannot</strong> be <code>facetable</code>; sortable is limited/pointless.</td></tr>
+        <tr><td>Empty</td><td>Cannot be null or empty.</td></tr>
+      </table>
+    </div>
+    <div>
+      <h3>Why not full-text search on it?</h3>
+      <ul>
+        <li>It's typically a GUID/opaque code - no linguistic meaning to tokenize.</li>
+        <li>To <em>fetch by id</em>, use the direct <strong>Lookup</strong> API - it's O(1) and avoids scoring overhead.</li>
+        <li>To filter by id, use <code class="inline">$filter=Id eq '...'</code> (exact) not <code class="inline">search=</code>.</li>
+      </ul>
+      <pre><span class="m">GET</span> /indexes/opportunities/docs/<span class="s">'op-1024'</span>?api-version=2024-07-01
+<span class="c">// Direct key lookup - fastest way to get one document</span></pre>
+      <div class="callout warn"><span class="t">Encoding tip</span><p>If your natural id has illegal chars (e.g. an email or path), <strong>Base64-URL encode</strong> it before storing as the key, and keep the original in a separate searchable field.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 6. Data types & field params -->
+<section class="slide" data-title="Data types & field parameters">
+  <span class="kicker">04 · Schema</span>
+  <h1>Field data types &amp; parameters - with examples</h1>
+  <div class="callout"><span class="t">Why are they called “EDM” data types?</span><p><strong>EDM = Entity Data Model</strong> - the type system defined by the <strong>OData</strong> protocol that Azure AI Search's REST API is built on. Because every type name is prefixed with the EDM namespace (e.g. <code class="inline">Edm.String</code>, <code class="inline">Edm.Int32</code>), they are language-neutral and map cleanly to JSON over the wire - independent of C#, Java or Python client types.</p></div>
+  <div class="split">
+    <div>
+      <h3>EDM data types</h3>
+      <table>
+        <tr><th>Type</th><th>Example value</th></tr>
+        <tr><td><code>Edm.String</code></td><td><code>"Acme Corp"</code></td></tr>
+        <tr><td><code>Edm.Boolean</code></td><td><code>true</code></td></tr>
+        <tr><td><code>Edm.Int32</code></td><td><code>42</code></td></tr>
+        <tr><td><code>Edm.Int64</code></td><td><code>9000000000</code></td></tr>
+        <tr><td><code>Edm.Double</code></td><td><code>19999.95</code></td></tr>
+        <tr><td><code>Edm.DateTimeOffset</code></td><td><code>2026-07-31T10:00:00Z</code></td></tr>
+        <tr><td><code>Edm.GeographyPoint</code></td><td><code>{ type:"Point", coordinates:[-122,47] }</code></td></tr>
+        <tr><td><code>Collection(Edm.String)</code></td><td><code>["sales"]</code></td></tr>
+        <tr><td><code>Edm.ComplexType</code></td><td>nested object / <code>Collection</code> of objects</td></tr>
+      </table>
+    </div>
+    <div>
+      <h3>Field attributes (parameters)</h3>
+      <table>
+        <tr><th>Attribute</th><th>Meaning</th></tr>
+        <tr><td><code>key</code></td><td>The unique document id (one only).</td></tr>
+        <tr><td><code>searchable</code></td><td>Included in full-text index (strings only).</td></tr>
+        <tr><td><code>filterable</code></td><td>Usable in <code>$filter</code>.</td></tr>
+        <tr><td><code>sortable</code></td><td>Usable in <code>$orderby</code>.</td></tr>
+        <tr><td><code>facetable</code></td><td>Can produce facet counts.</td></tr>
+        <tr><td><code>retrievable</code></td><td>Returned in results.</td></tr>
+        <tr><td><code>analyzer</code></td><td>Text analysis chain for the field.</td></tr>
+      </table>
+      <pre><span class="k">"fields"</span>: [
+  { <span class="k">"name"</span>:<span class="s">"Id"</span>, <span class="k">"type"</span>:<span class="s">"Edm.String"</span>, <span class="k">"key"</span>:<span class="n">true</span>,
+    <span class="k">"searchable"</span>:<span class="n">false</span>, <span class="k">"filterable"</span>:<span class="n">true</span> },
+  { <span class="k">"name"</span>:<span class="s">"name"</span>, <span class="k">"type"</span>:<span class="s">"Edm.String"</span>,
+    <span class="k">"searchable"</span>:<span class="n">true</span>, <span class="k">"sortable"</span>:<span class="n">true</span> },
+  { <span class="k">"name"</span>:<span class="s">"amount"</span>, <span class="k">"type"</span>:<span class="s">"Edm.Double"</span>,
+    <span class="k">"filterable"</span>:<span class="n">true</span>, <span class="k">"sortable"</span>:<span class="n">true</span> },
+  { <span class="k">"name"</span>:<span class="s">"tags"</span>, <span class="k">"type"</span>:<span class="s">"Collection(Edm.String)"</span>,
+    <span class="k">"searchable"</span>:<span class="n">true</span>, <span class="k">"filterable"</span>:<span class="n">true</span> }
+]</pre>
+    </div>
+  </div>
+</section>
+
+<!-- 7. How search works -->
+<section class="slide" data-title="How full-text & fuzzy search work">
+  <span class="kicker">05 · Under the Hood</span>
+  <h1>How full-text &amp; fuzzy search work behind the scenes</h1>
+  <div class="split">
+    <div>
+      <h3>Indexing pipeline (write time)</h3>
+      <ol>
+        <li><strong>Char filters</strong> - clean raw text (strip HTML, map chars).</li>
+        <li><strong>Tokenizer</strong> - split into tokens ("Acme-Corp" → "Acme", "Corp").</li>
+        <li><strong>Token filters</strong> - lowercase, remove stop-words, stem ("running"→"run").</li>
+        <li>Resulting terms go into the <strong>inverted index</strong>: term → list of docs.</li>
+      </ol>
+      <h3>Query time</h3>
+      <p>The query text runs through the <em>same</em> analyzer, then matched terms are looked up in the inverted index, and results are ranked with <strong>BM25</strong>.</p>
+    </div>
+    <div>
+      <div class="card">
+        <h3>BM25 relevance - the intuition</h3>
+        <ul>
+          <li><strong>TF</strong>: more occurrences of the term → higher score (with diminishing returns).</li>
+          <li><strong>IDF</strong>: rare terms across the corpus count more than common ones.</li>
+          <li><strong>Field length</strong>: a hit in a short field (title) outweighs one in a long field (description).</li>
+        </ul>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h3>Fuzzy search (~ typo tolerance)</h3>
+        <p>Uses <strong>edit distance (Levenshtein)</strong>, max 2. <code class="inline">search=Amce~</code> matches "Acme". Requires <code class="inline">queryType=full</code> (Lucene syntax).</p>
+        <pre><span class="c">// up to 1 edit</span>
+search=<span class="s">opportunty~1</span>&queryType=<span class="s">full</span></pre>
+      </div>
+      <div class="callout"><span class="t">Wildcard vs fuzzy</span><p><code class="inline">micro*</code> = prefix wildcard. <code class="inline">micro~</code> = fuzzy. Wildcards are not analyzed (no stemming), so use with care.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 9. Analyzers -->
+<section class="slide" data-title="Analyzers">
+  <span class="kicker">06 · Text Analysis</span>
+  <h1>Analyzers - built-in catalog, defaults vs custom</h1>
+  <p class="lead">An <strong>analyzer</strong> is the full text-processing chain (<em>char filters → tokenizer → token filters</em>). It decides <em>how a field is searched</em>. The <strong>same</strong> analyzer is applied at index time and query time. Every searchable string field uses one - the default is <code class="inline">standard.lucene</code> unless you override it.</p>
+
+  <h3>Readily available (in-built) analyzers - reference by name, zero config</h3>
+  <table>
+    <tr><th>Analyzer name</th><th>What it does</th><th>Good for</th></tr>
+    <tr><td><code>standard.lucene</code> <span class="chip">default</span></td><td>Grammar-based split, lowercased, light punctuation removal.</td><td>General text.</td></tr>
+    <tr><td><code>standardasciifolding.lucene</code></td><td>Standard + folds accents (café→cafe).</td><td>Accented / multilingual names.</td></tr>
+    <tr><td><code>keyword</code></td><td>Entire field value = <strong>one</strong> token (no splitting).</td><td>Codes, SKUs, ids, enums.</td></tr>
+    <tr><td><code>whitespace</code></td><td>Splits only on whitespace; keeps case &amp; symbols.</td><td>Tags, symbols like <code>C#</code>.</td></tr>
+    <tr><td><code>simple</code></td><td>Splits on non-letters, lowercases; drops digits.</td><td>Simple alphabetic text.</td></tr>
+    <tr><td><code>stop</code></td><td>Like simple + removes English stop-words.</td><td>Short prose, no stemming.</td></tr>
+    <tr><td><code>pattern</code></td><td>Splits by a regex (default <code>\W+</code>).</td><td>Emails, paths, custom delimiters.</td></tr>
+    <tr><td><code>[lang].microsoft</code></td><td>Microsoft NLP: lemmatization + stop-words (50+ langs, e.g. <code>en.microsoft</code>, <code>fr.microsoft</code>).</td><td>High-quality language search.</td></tr>
+    <tr><td><code>[lang].lucene</code></td><td>Lucene language analyzer: stemming + stop-words (e.g. <code>en.lucene</code>).</td><td>Open-source language search.</td></tr>
+  </table>
+
+  <div class="split">
+    <div>
+      <h3>Configure a <em>default</em> (built-in) analyzer</h3>
+      <p class="small">Just name it - nothing to define elsewhere.</p>
+      <pre>{ <span class="k">"name"</span>:<span class="s">"description"</span>, <span class="k">"type"</span>:<span class="s">"Edm.String"</span>,
+  <span class="k">"searchable"</span>:<span class="n">true</span>,
+  <span class="k">"analyzer"</span>:<span class="s">"en.microsoft"</span> }
+
+<span class="c">// Different analyzer at index vs query time</span>
+{ <span class="k">"name"</span>:<span class="s">"name"</span>, <span class="k">"type"</span>:<span class="s">"Edm.String"</span>, <span class="k">"searchable"</span>:<span class="n">true</span>,
+  <span class="k">"indexAnalyzer"</span>:<span class="s">"edge_analyzer"</span>,   <span class="c">// build prefixes</span>
+  <span class="k">"searchAnalyzer"</span>:<span class="s">"standard.lucene"</span> }  <span class="c">// match whole words</span></pre>
+      <div class="callout warn"><span class="t">Immutable</span><p>Changing a field's analyzer needs a <strong>rebuild</strong> (or a new field). You can't retro-analyze existing docs in place.</p></div>
+    </div>
+    <div>
+      <h3>Configure a <em>custom</em> analyzer</h3>
+      <p class="small">Define once under <code class="inline">index.analyzers[]</code>, then reference the name from a field. A custom analyzer = 0..n charFilters + 1 tokenizer + 0..n tokenFilters.</p>
+      <pre>{
+  <span class="k">"name"</span>:<span class="s">"opportunities"</span>,
+  <span class="k">"fields"</span>:[
+    { <span class="k">"name"</span>:<span class="s">"name"</span>, <span class="k">"type"</span>:<span class="s">"Edm.String"</span>,
+      <span class="k">"searchable"</span>:<span class="n">true</span>, <span class="k">"analyzer"</span>:<span class="s">"opp_custom"</span> }
+  ],
+  <span class="k">"analyzers"</span>:[{
+    <span class="k">"name"</span>:<span class="s">"opp_custom"</span>,
+    <span class="k">"@odata.type"</span>:<span class="s">"#Microsoft.Azure.Search.CustomAnalyzer"</span>,
+    <span class="k">"charFilters"</span>:[<span class="s">"html_strip"</span>],
+    <span class="k">"tokenizer"</span>:<span class="s">"standard_v2"</span>,
+    <span class="k">"tokenFilters"</span>:[<span class="s">"lowercase"</span>,<span class="s">"asciifolding"</span>]
+  }]
+}</pre>
+      <div class="callout tip"><span class="t">Test before you commit</span><pre style="margin:8px 0 0"><span class="m">POST</span> /indexes/opportunities/analyze?api-version=2024-07-01
+{ <span class="k">"text"</span>:<span class="s">"The Running Foxes-2024"</span>, <span class="k">"analyzer"</span>:<span class="s">"opp_custom"</span> }
+<span class="c">// → running, foxes, 2024   (inspect tokens per field)</span></pre></div>
+    </div>
+  </div>
+  <div class="callout"><span class="t">Default vs custom - the rule</span><p><strong>Default/built-in:</strong> reference by name (<code class="inline">"analyzer":"keyword"</code>) - nothing to declare. <strong>Custom:</strong> declare it in <code class="inline">analyzers[]</code> with an <code class="inline">@odata.type</code> + unique <code class="inline">name</code>, then point the field at that name.</p></div>
+</section>
+
+<!-- 10. Tokenizers -->
+<section class="slide" data-title="Tokenizers">
+  <span class="kicker">07 · Text Analysis</span>
+  <h1>Tokenizers - built-in catalog, defaults vs custom</h1>
+  <p class="lead">The <strong>tokenizer</strong> is the heart of an analyzer: it decides <em>where</em> raw text is broken into tokens. A custom analyzer uses <strong>exactly one</strong> tokenizer; everything downstream operates on its output.</p>
+
+  <h3>Readily available (in-built) tokenizers</h3>
+  <table>
+    <tr><th>Tokenizer</th><th>Behaviour</th><th>"Acme-Corp v2.0 a@b.com" →</th><th>Config?</th></tr>
+    <tr><td><code>standard_v2</code> <span class="chip">default</span></td><td>Grammar-based word breaking.</td><td>acme, corp, v2.0, a, b.com</td><td>No</td></tr>
+    <tr><td><code>classic</code></td><td>Standard + keeps acronyms/URLs/emails.</td><td>acme, corp, v2.0, a@b.com</td><td>No</td></tr>
+    <tr><td><code>keyword_v2</code></td><td>Whole input = one token.</td><td>"Acme-Corp v2.0 a@b.com"</td><td>Optional</td></tr>
+    <tr><td><code>whitespace</code></td><td>Split on whitespace only.</td><td>Acme-Corp, v2.0, a@b.com</td><td>No</td></tr>
+    <tr><td><code>letter</code></td><td>Split on non-letters.</td><td>Acme, Corp, v, com</td><td>No</td></tr>
+    <tr><td><code>lowercase</code></td><td>Letter split + lowercases.</td><td>acme, corp, v, com</td><td>No</td></tr>
+    <tr><td><code>uax_url_email</code></td><td>Keeps URLs &amp; emails intact.</td><td>Acme, Corp, v2.0, a@b.com</td><td>No</td></tr>
+    <tr><td><code>edgeNGram</code></td><td>Prefix grams (front-anchored).</td><td>Ac, Acm, Acme …</td><td>Yes</td></tr>
+    <tr><td><code>nGram</code></td><td>Sliding n-length grams.</td><td>Ac, cm, me …</td><td>Yes</td></tr>
+    <tr><td><code>path_hierarchy_v2</code></td><td>Splits paths into ancestors.</td><td>/a, /a/b, /a/b/c</td><td>Yes</td></tr>
+    <tr><td><code>pattern</code></td><td>Split/group via regex.</td><td>your regex decides</td><td>Yes</td></tr>
+    <tr><td><code>microsoft_language_tokenizer</code> / <code>…_stemming_tokenizer</code></td><td>Language-aware word breaking (+ stemming variant).</td><td>per language rules</td><td>Yes</td></tr>
+  </table>
+
+  <div class="split">
+    <div>
+      <h3>Use a <em>default</em> tokenizer (by name)</h3>
+      <p class="small">No-config tokenizers are referenced directly inside a custom analyzer.</p>
+      <pre><span class="k">"analyzers"</span>:[{
+  <span class="k">"name"</span>:<span class="s">"code_analyzer"</span>,
+  <span class="k">"@odata.type"</span>:<span class="s">"#Microsoft.Azure.Search.CustomAnalyzer"</span>,
+  <span class="k">"tokenizer"</span>:<span class="s">"keyword_v2"</span>,       <span class="c">// built-in, no definition</span>
+  <span class="k">"tokenFilters"</span>:[<span class="s">"lowercase"</span>]
+}]</pre>
+    </div>
+    <div>
+      <h3>Define a <em>custom</em> (configured) tokenizer</h3>
+      <p class="small">Configurable tokenizers must be declared in <code class="inline">tokenizers[]</code>, then referenced by name.</p>
+      <pre><span class="k">"tokenizers"</span>:[{
+  <span class="k">"name"</span>:<span class="s">"edge_tok"</span>,
+  <span class="k">"@odata.type"</span>:<span class="s">"#Microsoft.Azure.Search.EdgeNGramTokenizer"</span>,
+  <span class="k">"minGram"</span>:<span class="n">2</span>, <span class="k">"maxGram"</span>:<span class="n">15</span>,
+  <span class="k">"tokenChars"</span>:[<span class="s">"letter"</span>,<span class="s">"digit"</span>] }],
+<span class="k">"analyzers"</span>:[{
+  <span class="k">"name"</span>:<span class="s">"edge_analyzer"</span>,
+  <span class="k">"@odata.type"</span>:<span class="s">"#Microsoft.Azure.Search.CustomAnalyzer"</span>,
+  <span class="k">"tokenizer"</span>:<span class="s">"edge_tok"</span>,          <span class="c">// your named tokenizer</span>
+  <span class="k">"tokenFilters"</span>:[<span class="s">"lowercase"</span>] }]</pre>
+      <div class="callout"><span class="t">Why per field?</span><p>Autocomplete/prefix fields want <strong>edgeNGram</strong>; SKUs/codes want <strong>keyword_v2</strong>; URLs/emails want <strong>uax_url_email</strong>; prose wants <strong>standard_v2</strong>.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 11. Token filters -->
+<section class="slide" data-title="Token Filters">
+  <span class="kicker">08 · Text Analysis</span>
+  <h1>Token filters - built-in catalog, defaults vs custom</h1>
+  <p class="lead">Token filters run <strong>after</strong> the tokenizer, in order, transforming the token stream: lowercasing, stemming, stop-word removal, synonyms, n-grams, folding, deduping. An analyzer can chain <strong>many</strong> of them.</p>
+
+  <h3>Readily available (in-built) token filters</h3>
+  <table>
+    <tr><th>Token filter</th><th>Effect</th><th>Config?</th></tr>
+    <tr><td><code>lowercase</code></td><td>"Acme" → "acme".</td><td>No</td></tr>
+    <tr><td><code>uppercase</code></td><td>"Acme" → "ACME".</td><td>No</td></tr>
+    <tr><td><code>asciifolding</code></td><td>"café" → "cafe" (folds accents).</td><td>No</td></tr>
+    <tr><td><code>trim</code></td><td>Strips leading/trailing whitespace.</td><td>No</td></tr>
+    <tr><td><code>elision</code></td><td>Drops elisions ("l'avion" → "avion").</td><td>Optional</td></tr>
+    <tr><td><code>porter_stem</code> / <code>kstem</code></td><td>English stemming ("running" → "run").</td><td>No</td></tr>
+    <tr><td><code>snowball</code> / <code>stemmer</code></td><td>Language-configurable stemming.</td><td>Yes</td></tr>
+    <tr><td><code>stemmer_override</code></td><td>Custom "word ⇒ stem" rules.</td><td>Yes</td></tr>
+    <tr><td><code>stopwords</code></td><td>Removes stop-words (built-in lists or yours).</td><td>Yes</td></tr>
+    <tr><td><code>keyword_marker</code></td><td>Protects words from later stemming.</td><td>Yes</td></tr>
+    <tr><td><code>synonym</code></td><td>Expands equivalents ("laptop"≈"notebook").</td><td>Yes</td></tr>
+    <tr><td><code>edgeNGram_v2</code> / <code>nGram_v2</code></td><td>Prefix / sliding grams for partial match.</td><td>Yes</td></tr>
+    <tr><td><code>shingle</code></td><td>Builds word n-grams ("cloud cost").</td><td>Yes</td></tr>
+    <tr><td><code>word_delimiter</code></td><td>Splits on case/number/symbol ("PowerShot"→power,shot).</td><td>Yes</td></tr>
+    <tr><td><code>phonetic</code></td><td>Sound-alike matching (Soundex/Metaphone).</td><td>Yes</td></tr>
+    <tr><td><code>length</code> / <code>limit</code> / <code>truncate</code></td><td>Filter/cap tokens by length or count.</td><td>Yes</td></tr>
+    <tr><td><code>unique</code> / <code>reverse</code></td><td>Dedupe tokens / reverse chars (suffix search).</td><td>Optional</td></tr>
+    <tr><td><code>*_normalization</code></td><td>Script normalizers (arabic, german, hindi, scandinavian…).</td><td>No</td></tr>
+  </table>
+
+  <div class="split">
+    <div>
+      <h3>Use <em>default</em> token filters (by name)</h3>
+      <p class="small">No-config filters chain directly - order matters (left → right).</p>
+      <pre><span class="k">"analyzers"</span>:[{
+  <span class="k">"name"</span>:<span class="s">"folded"</span>,
+  <span class="k">"@odata.type"</span>:<span class="s">"#Microsoft.Azure.Search.CustomAnalyzer"</span>,
+  <span class="k">"tokenizer"</span>:<span class="s">"standard_v2"</span>,
+  <span class="k">"tokenFilters"</span>:[<span class="s">"lowercase"</span>,<span class="s">"asciifolding"</span>,<span class="s">"porter_stem"</span>]
+}]</pre>
+    </div>
+    <div>
+      <h3>Define <em>custom</em> (configured) token filters</h3>
+      <p class="small">Parameterized filters go in <code class="inline">tokenFilters[]</code> and are referenced by name.</p>
+      <pre><span class="k">"tokenFilters"</span>:[
+  { <span class="k">"name"</span>:<span class="s">"my_stop"</span>,
+    <span class="k">"@odata.type"</span>:<span class="s">"#Microsoft.Azure.Search.StopwordsTokenFilter"</span>,
+    <span class="k">"stopwords"</span>:[<span class="s">"inc"</span>,<span class="s">"ltd"</span>,<span class="s">"corp"</span>] },
+  { <span class="k">"name"</span>:<span class="s">"my_syn"</span>,
+    <span class="k">"@odata.type"</span>:<span class="s">"#Microsoft.Azure.Search.SynonymTokenFilter"</span>,
+    <span class="k">"synonyms"</span>:[<span class="s">"laptop, notebook"</span>,<span class="s">"vm =&gt; virtual machine"</span>] }
+],
+<span class="k">"analyzers"</span>:[{
+  <span class="k">"name"</span>:<span class="s">"opp_text"</span>,
+  <span class="k">"@odata.type"</span>:<span class="s">"#Microsoft.Azure.Search.CustomAnalyzer"</span>,
+  <span class="k">"tokenizer"</span>:<span class="s">"standard_v2"</span>,
+  <span class="k">"tokenFilters"</span>:[<span class="s">"lowercase"</span>,<span class="s">"my_syn"</span>,<span class="s">"my_stop"</span>]
+}]</pre>
+      <div class="callout tip"><span class="t">Why per field?</span><p>Filter/exact fields often need only <strong>lowercase</strong>; description fields benefit from <strong>stemming + stopwords + synonyms</strong> for recall. Order matters - stem <em>after</em> lowercasing, stop <em>before</em> synonyms if you want clean expansion.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 12. Char filters -->
+<section class="slide" data-title="Char Filters">
+  <span class="kicker">09 · Text Analysis</span>
+  <h1>Char filters - built-in catalog, defaults vs custom</h1>
+  <p class="lead"><strong>Char filters</strong> run <em>first</em> - before the tokenizer - operating on the raw character stream to clean or normalize input so meaningful symbols aren't lost during tokenizing. An analyzer can chain several.</p>
+
+  <h3>Readily available (in-built) char filters</h3>
+  <table>
+    <tr><th>Char filter</th><th>@odata.type</th><th>What it does</th><th>Config?</th></tr>
+    <tr><td><code>html_strip</code></td><td><span class="small">(predefined name)</span></td><td>Strips HTML tags &amp; decodes entities from stored markup.</td><td><span class="chip ok">No</span></td></tr>
+    <tr><td><code>mapping</code></td><td><code>MappingCharFilter</code></td><td>Literal char/string replacements you supply.</td><td><span class="chip warn">Yes</span></td></tr>
+    <tr><td><code>pattern_replace</code></td><td><code>PatternReplaceCharFilter</code></td><td>Regex find/replace over raw text.</td><td><span class="chip warn">Yes</span></td></tr>
+  </table>
+  <p class="small">Azure ships <strong>one</strong> no-config char filter (<code class="inline">html_strip</code>); the other two are templates you must configure as named instances. There are only these three char-filter types.</p>
+
+  <div class="split">
+    <div>
+      <h3>Use the <em>default</em> (built-in) char filter</h3>
+      <p class="small">Reference <code class="inline">html_strip</code> by name - no definition needed.</p>
+      <pre><span class="k">"analyzers"</span>:[{
+  <span class="k">"name"</span>:<span class="s">"clean_html"</span>,
+  <span class="k">"@odata.type"</span>:<span class="s">"#Microsoft.Azure.Search.CustomAnalyzer"</span>,
+  <span class="k">"charFilters"</span>:[<span class="s">"html_strip"</span>],   <span class="c">// built-in</span>
+  <span class="k">"tokenizer"</span>:<span class="s">"standard_v2"</span>,
+  <span class="k">"tokenFilters"</span>:[<span class="s">"lowercase"</span>]
+}]
+<span class="c">// "&lt;p&gt;Big &amp;amp; Bold&lt;/p&gt;" → big, bold</span></pre>
+    </div>
+    <div>
+      <h3>Define <em>custom</em> char filters (configured)</h3>
+      <p class="small">Declare in <code class="inline">charFilters[]</code>, then reference from the analyzer.</p>
+      <pre><span class="k">"charFilters"</span>:[
+  { <span class="k">"name"</span>:<span class="s">"sym_map"</span>,
+    <span class="k">"@odata.type"</span>:<span class="s">"#Microsoft.Azure.Search.MappingCharFilter"</span>,
+    <span class="k">"mappings"</span>:[<span class="s">"C#=&gt;csharp"</span>,<span class="s">"C++=&gt;cplusplus"</span>,<span class="s">"&amp;=&gt;and"</span>] },
+  { <span class="k">"name"</span>:<span class="s">"strip_dashes"</span>,
+    <span class="k">"@odata.type"</span>:<span class="s">"#Microsoft.Azure.Search.PatternReplaceCharFilter"</span>,
+    <span class="k">"pattern"</span>:<span class="s">"[-_]"</span>, <span class="k">"replacement"</span>:<span class="s">" "</span> }
+],
+<span class="k">"analyzers"</span>:[{
+  <span class="k">"name"</span>:<span class="s">"symbol_safe"</span>,
+  <span class="k">"@odata.type"</span>:<span class="s">"#Microsoft.Azure.Search.CustomAnalyzer"</span>,
+  <span class="k">"charFilters"</span>:[<span class="s">"sym_map"</span>,<span class="s">"strip_dashes"</span>],
+  <span class="k">"tokenizer"</span>:<span class="s">"standard_v2"</span>,
+  <span class="k">"tokenFilters"</span>:[<span class="s">"lowercase"</span>] }]</pre>
+      <div class="callout warn"><span class="t">Order matters</span><p>char filter → tokenizer → token filters. Without <code class="inline">sym_map</code>, the standard tokenizer drops <code>#</code> so "C#" collapses to "c". Mapping <em>before</em> tokenizing preserves the intent as "csharp".</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 13. Scoring profiles -->
+<section class="slide" data-title="Scoring Profiles">
+  <span class="kicker">10 · Relevance</span>
+  <h1>Scoring profiles - tune relevance &amp; boosting</h1>
+  <p class="lead">A <strong>scoring profile</strong> adjusts the base BM25 score using field weights, freshness, distance, magnitude or tag boosts - so business priorities shape ranking.</p>
+  <div class="split">
+    <div>
+      <h3>Definition</h3>
+      <pre><span class="k">"scoringProfiles"</span>:[{
+  <span class="k">"name"</span>:<span class="s">"boostRecentBigDeals"</span>,
+  <span class="k">"text"</span>:{ <span class="k">"weights"</span>:{ <span class="k">"name"</span>:<span class="n">5</span>, <span class="k">"description"</span>:<span class="n">1</span> } },
+  <span class="k">"functions"</span>:[
+    { <span class="k">"type"</span>:<span class="s">"magnitude"</span>, <span class="k">"fieldName"</span>:<span class="s">"amount"</span>,
+      <span class="k">"boost"</span>:<span class="n">3</span>,
+      <span class="k">"magnitude"</span>:{ <span class="k">"boostingRangeStart"</span>:<span class="n">0</span>, <span class="k">"boostingRangeEnd"</span>:<span class="n">100000</span> } },
+    { <span class="k">"type"</span>:<span class="s">"freshness"</span>, <span class="k">"fieldName"</span>:<span class="s">"createdOn"</span>,
+      <span class="k">"boost"</span>:<span class="n">2</span>, <span class="k">"freshness"</span>:{ <span class="k">"boostingDuration"</span>:<span class="s">"P30D"</span> } }
+  ]
+}]</pre>
+    </div>
+    <div>
+      <h3>Apply it in a query</h3>
+      <pre><span class="m">POST</span> /indexes/opportunities/docs/search
+{ <span class="k">"search"</span>:<span class="s">"cloud migration"</span>,
+  <span class="k">"scoringProfile"</span>:<span class="s">"boostRecentBigDeals"</span> }</pre>
+      <div class="grid c2" style="margin-top:12px">
+        <div class="card"><h3>Function types</h3><p class="pillrow"><span class="chip">magnitude</span><span class="chip">freshness</span><span class="chip">distance</span><span class="chip">tag</span></p></div>
+        <div class="card"><h3>Why per field</h3><p class="small">Weights are set per <em>searchable</em> field; functions target specific numeric/date/geo/collection fields.</p></div>
+      </div>
+      <div class="callout"><span class="t">Set a default</span><p>Add <code class="inline">"defaultScoringProfile":"..."</code> on the index so every query benefits without changing client code.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 14. Suggesters -->
+<section class="slide" data-title="Suggesters">
+  <span class="kicker">11 · UX</span>
+  <h1>Suggesters - help people while they type</h1>
+  <p class="lead">Use a suggester when you want the app to help people while they type, like the search box on Amazon or the contact search on a phone. It shows likely matches before the user finishes typing.</p>
+  <div class="split">
+    <div>
+      <div class="card">
+        <h3>Think of it like this</h3>
+        <p class="small">The app remembers the most likely names or titles that start with the letters you typed. Instead of forcing the user to guess the exact full name, it offers a short list of likely matches.</p>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h3>When to use it</h3>
+        <ul>
+          <li>Product search: type <code class="inline">mic</code> and show Microsoft products.</li>
+          <li>Customer lookup: type <code class="inline">con</code> and show matching company names.</li>
+          <li>Project search: type <code class="inline">pro</code> and show project titles.</li>
+        </ul>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h3>What the user sees</h3>
+        <table>
+          <tr><th>Typed letters</th><th>Helpful suggestion</th></tr>
+          <tr><td><code>mic</code></td><td>Microsoft Surface, Micro Focus, Micron</td></tr>
+          <tr><td><code>cont</code></td><td>Contoso Retail, Contoso Cloud</td></tr>
+          <tr><td><code>pro</code></td><td>Project Orion, Professional Services</td></tr>
+        </table>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <h3>How it works</h3>
+        <div class="grid" style="gap:12px">
+          <div class="callout tip" style="margin:0">
+            <span class="t">1. Type a few letters</span>
+            <p>The user starts typing part of a name, product, or company.</p>
+          </div>
+          <div class="callout" style="margin:0">
+            <span class="t">2. Show likely matches</span>
+            <p>The app suggests a short list of close matches instead of making the user guess.</p>
+          </div>
+          <div class="callout warn" style="margin:0">
+            <span class="t">3. User picks one</span>
+            <p>The user taps or clicks the right suggestion and continues faster.</p>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h3>Best fit</h3>
+        <p class="small">Names, titles, codes, company names, product names, and other short labels people recognize while typing.</p>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h3>Not for</h3>
+        <p class="small">Full document search, filters, exact reports, or long descriptions. Those should use normal search and filtering.</p>
+      </div>
+      <div class="callout tip" style="margin-top:14px"><span class="t">In one sentence</span><p>A suggester is the feature that says, “Did you mean one of these?” while the user is still typing.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 14a. Suggesters examples -->
+<section class="slide" data-title="Suggesters query examples">
+  <span class="kicker">12 · UX</span>
+  <h1>How the queries look - suggest and autocomplete</h1>
+  <p class="lead">These are the two common ways people use suggesters. One helps finish the word in the search box, the other shows a short list of matching records.</p>
+  <div class="split">
+    <div>
+      <h3>/autocomplete - finish the word</h3>
+      <div class="card">
+        <p class="small">Use this when the user is still typing and you want to complete the search phrase itself.</p>
+        <pre><span class="m">GET</span> /indexes/opportunities/docs/autocomplete?search=mic&amp;suggesterName=sg&amp;autocompleteMode=oneTerm&amp;api-version=2024-07-01
+
+<span class="c">// sample output</span>
+{
+  <span class="k">"text"</span>: <span class="s">"microsoft"</span>,
+  <span class="k">"queryPlusText"</span>: <span class="s">"mic microsoft"</span>
+}</pre>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h3>Example use</h3>
+        <ul>
+          <li>User types <code class="inline">mic</code>.</li>
+          <li>The app suggests <code class="inline">microsoft</code>.</li>
+          <li>The search box becomes easier and faster to finish.</li>
+        </ul>
+      </div>
+    </div>
+    <div>
+      <h3>/suggest - show matching items</h3>
+      <div class="card">
+        <p class="small">Use this when you want to show a small list of matching records that the user can pick from.</p>
+        <pre><span class="m">GET</span> /indexes/opportunities/docs/suggest?search=contoso&amp;suggesterName=sg&amp;$top=10&amp;api-version=2024-07-01
+
+<span class="c">// sample output</span>
+{
+  <span class="k">"value"</span>: [
+    { <span class="k">"@search.score"</span>: <span class="n">0.92</span>, <span class="k">"name"</span>: <span class="s">"Contoso Retail"</span> },
+    { <span class="k">"@search.score"</span>: <span class="n">0.88</span>, <span class="k">"name"</span>: <span class="s">"Contoso Cloud"</span> }
+  ]
+}</pre>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h3>Example use</h3>
+        <ul>
+          <li>User types <code class="inline">cont</code>.</li>
+          <li>The app shows matching company names.</li>
+          <li>The user chooses the right record from the list.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="callout tip"><span class="t">Easy rule</span><p><code class="inline">/autocomplete</code> helps finish the text. <code class="inline">/suggest</code> helps choose the item.</p></div>
+</section>
+
+<!-- 15. Searchable/Filterable/Sortable/Retrievable -->
+<section class="slide" data-title="Attribute constraints & management">
+  <span class="kicker">13 · Schema Discipline</span>
+  <h1>Searchable · Filterable · Sortable · Retrievable</h1>
+  <p class="lead">These four attributes drive both <strong>capability</strong> and <strong>index size/cost</strong>. Enable only what you truly query - every extra flag inflates storage and build time.</p>
+  <table>
+    <tr><th>Attribute</th><th>Enables</th><th>Applies to</th><th>Constraint / cost</th></tr>
+    <tr><td><span class="chip">searchable</span></td><td>Full-text <code>search=</code></td><td>Strings &amp; string collections only</td><td>Builds inverted index → largest storage impact.</td></tr>
+    <tr><td><span class="chip">filterable</span></td><td><code>$filter</code>, <code>$count</code></td><td>All types</td><td>Exact, case-sensitive; needed for facets too.</td></tr>
+    <tr><td><span class="chip">sortable</span></td><td><code>$orderby</code></td><td>Simple fields; <strong>not</strong> collections</td><td>Complex/collection fields can't be sortable.</td></tr>
+    <tr><td><span class="chip">retrievable</span></td><td>Returned in results</td><td>All types</td><td>Turn off for secret/internal fields; still searchable.</td></tr>
+  </table>
+  <div class="split">
+    <div>
+      <h3>Design heuristics</h3>
+      <ul>
+        <li><strong>Ids/codes:</strong> filterable + retrievable, <em>not</em> searchable.</li>
+        <li><strong>Descriptions:</strong> searchable + retrievable, <em>not</em> filterable/sortable.</li>
+        <li><strong>Status/category:</strong> filterable + facetable.</li>
+        <li><strong>Numbers/dates:</strong> filterable + sortable.</li>
+      </ul>
+    </div>
+    <div>
+      <div class="callout warn"><span class="t">Mutability</span><p>You can turn <code class="inline">retrievable</code> on/off anytime. Turning on <code class="inline">searchable/filterable/sortable/facetable</code> that were previously off requires a field rebuild - so decide early.</p></div>
+      <div class="callout tip"><span class="t">Cost lever</span><p>An index where every field has every flag can be 3-5× larger. Trim aggressively; it speeds up indexing and lowers tier requirements.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 16. Index lifecycle & change restrictions -->
+<section class="slide" data-title="Index lifecycle & change restrictions">
+  <span class="kicker">14 · Governance</span>
+  <h1>Index lifecycle &amp; change restrictions</h1>
+  <div class="split">
+    <div>
+      <h3>What you CAN change without rebuild</h3>
+      <ul>
+        <li>➕ <strong>Add</strong> new fields (existing docs get null for them).</li>
+        <li>Toggle <code class="inline">retrievable</code>.</li>
+        <li>Add/modify <strong>scoring profiles</strong>, <strong>CORS</strong>, <strong>synonym map</strong> references.</li>
+        <li>Add <strong>suggesters</strong>? ❌ - needs rebuild.</li>
+      </ul>
+      <h3>What FORCES a rebuild (drop + recreate)</h3>
+      <ul>
+        <li>Delete or rename a field.</li>
+        <li>Change a field's <strong>type</strong> or <strong>analyzer</strong>.</li>
+        <li>Turn on <code class="inline">searchable/filterable/sortable/facetable</code>.</li>
+        <li>Change the <strong>key</strong> field.</li>
+      </ul>
+    </div>
+    <div>
+      <div class="card">
+        <h3>Safe evolution pattern</h3>
+        <ol>
+          <li>Create <code class="inline">index-v2</code> with the new schema.</li>
+          <li>Bulk re-index data into v2.</li>
+          <li>Swap an <strong>alias</strong> from v1 → v2 (zero-downtime cutover).</li>
+          <li>Delete v1 once validated.</li>
+        </ol>
+      </div>
+      <div class="callout"><span class="t">Index aliases</span><p>Aliases let clients query a stable name (<code class="inline">opportunities</code>) while you rebuild behind it. This is the professional way to handle breaking schema changes.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 17. OData filter queries -->
+<section class="slide" data-title="OData $filter queries">
+  <span class="kicker">15 · Querying</span>
+  <h1>OData <code class="inline">$filter</code> - building filter queries</h1>
+  <p class="lead">Filters are <strong>exact, case-sensitive boolean expressions</strong> evaluated over <em>filterable</em> fields. They include/exclude documents but do <strong>not</strong> affect relevance score.</p>
+  <div class="split">
+    <div>
+      <h3>Operators &amp; logic</h3>
+      <pre><span class="c">// comparison</span>
+$filter=amount gt <span class="n">50000</span> and status eq <span class="s">'won'</span>
+
+<span class="c">// grouping + or</span>
+$filter=(status eq <span class="s">'won'</span> or status eq <span class="s">'open'</span>)
+        and amount ge <span class="n">1000</span>
+
+<span class="c">// date range</span>
+$filter=createdOn ge <span class="n">2026-01-01T00:00:00Z</span>
+        and createdOn lt <span class="n">2026-07-01T00:00:00Z</span></pre>
+    </div>
+    <div>
+      <h3>Collections &amp; functions</h3>
+      <pre><span class="c">// any/all over a collection field</span>
+$filter=tags/any(t: t eq <span class="s">'priority'</span>)
+$filter=tags/all(t: t ne <span class="s">'archived'</span>)
+
+<span class="c">// string functions</span>
+$filter=search.ismatch(<span class="s">'cloud'</span>,<span class="s">'name'</span>)
+$filter=geo.distance(location, geography'POINT(-122 47)') lt <span class="n">10</span></pre>
+      <div class="callout tip"><span class="t">Full request (Postman)</span><pre style="margin:8px 0 0"><span class="m">POST</span> /indexes/opportunities/docs/search?api-version=2024-07-01
+{ <span class="k">"search"</span>:<span class="s">"*"</span>,
+  <span class="k">"filter"</span>:<span class="s">"amount gt 50000 and status eq 'won'"</span>,
+  <span class="k">"count"</span>:<span class="n">true</span> }</pre></div>
+    </div>
+  </div>
+</section>
+
+<!-- 18. OData search queries -->
+<section class="slide" data-title="OData search queries">
+  <span class="kicker">16 · Querying</span>
+  <h1>OData <code class="inline">search</code> - the query text</h1>
+  <p class="lead">The <code class="inline">search</code> parameter is the actual text matched against <em>searchable</em> fields. Combine it with <code class="inline">searchFields</code> to scope, and <code class="inline">$filter</code> to pre-narrow.</p>
+  <div class="split">
+    <div>
+      <pre><span class="c">// simple query, all searchable fields</span>
+{ <span class="k">"search"</span>:<span class="s">"cloud migration"</span> }
+
+<span class="c">// scope to specific fields + weight order</span>
+{ <span class="k">"search"</span>:<span class="s">"migration"</span>,
+  <span class="k">"searchFields"</span>:<span class="s">"name,description"</span> }
+
+<span class="c">// search + filter + select + count</span>
+{ <span class="k">"search"</span>:<span class="s">"azure"</span>,
+  <span class="k">"filter"</span>:<span class="s">"status eq 'open'"</span>,
+  <span class="k">"select"</span>:<span class="s">"Id,name,amount"</span>,
+  <span class="k">"count"</span>:<span class="n">true</span> }</pre>
+    </div>
+    <div>
+      <div class="card">
+        <h3>search vs filter - remember</h3>
+        <ul>
+          <li><code class="inline">search</code> = linguistic, ranked, case-insensitive.</li>
+          <li><code class="inline">filter</code> = exact, boolean, case-sensitive, unranked.</li>
+          <li>Use filter to <em>narrow</em>, search to <em>rank</em>.</li>
+        </ul>
+      </div>
+      <div class="callout"><span class="t">Match-all</span><p><code class="inline">"search":"*"</code> matches every document - useful when you only want to filter/sort/browse.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 19. Full text search -->
+<section class="slide" data-title="Full-text search (Lucene)">
+  <span class="kicker">17 · Querying</span>
+  <h1>Full-text search with Lucene syntax</h1>
+  <p class="lead">Set <code class="inline">queryType=full</code> to unlock the Lucene grammar: boolean operators, fielded search, wildcards, fuzzy, proximity, boosting &amp; regex.</p>
+  <div class="split">
+    <div>
+      <table>
+        <tr><th>Feature</th><th>Example</th></tr>
+        <tr><td>Boolean</td><td><code>cloud AND (aws OR azure) NOT legacy</code></td></tr>
+        <tr><td>Fielded</td><td><code>name:migration</code></td></tr>
+        <tr><td>Phrase</td><td><code>"digital transformation"</code></td></tr>
+        <tr><td>Wildcard</td><td><code>migrat*</code></td></tr>
+        <tr><td>Fuzzy</td><td><code>opportunty~1</code></td></tr>
+        <tr><td>Proximity</td><td><code>"cloud cost"~5</code></td></tr>
+        <tr><td>Boost</td><td><code>azure^3 aws</code></td></tr>
+        <tr><td>Regex</td><td><code>/op-[0-9]{4}/</code></td></tr>
+      </table>
+    </div>
+    <div>
+      <pre>{ <span class="k">"search"</span>:<span class="s">"name:(cloud AND migrat*) NOT legacy"</span>,
+  <span class="k">"queryType"</span>:<span class="s">"full"</span>,
+  <span class="k">"searchMode"</span>:<span class="s">"all"</span> }</pre>
+      <div class="callout warn"><span class="t">Escaping</span><p>In Lucene syntax these are special: <code class="inline">+ - &amp;&amp; || ! ( ) { } [ ] ^ " ~ * ? : \ /</code>. Escape with a backslash to search them literally.</p></div>
+      <div class="callout tip"><span class="t">Simple vs full</span><p>Default <code class="inline">queryType=simple</code> supports <code>+ | - " * ( )</code>. Switch to <code class="inline">full</code> only when you need the advanced operators above.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 20. QueryType & SearchMode -->
+<section class="slide" data-title="QueryType & SearchMode">
+  <span class="kicker">18 · Querying</span>
+  <h1>QueryType &amp; SearchMode - with examples</h1>
+  <div class="split">
+    <div>
+      <h3>queryType</h3>
+      <table>
+        <tr><th>Value</th><th>Meaning</th></tr>
+        <tr><td><code>simple</code></td><td>Default. Lightweight operators <code>+ | - " *</code>.</td></tr>
+        <tr><td><code>full</code></td><td>Full Lucene: fuzzy, regex, proximity, boosting.</td></tr>
+        <tr><td><code>semantic</code></td><td>L2 semantic re-ranking with ML models.</td></tr>
+      </table>
+      <pre>{ <span class="k">"search"</span>:<span class="s">"cost~1 AND cloud"</span>, <span class="k">"queryType"</span>:<span class="s">"full"</span> }</pre>
+    </div>
+    <div>
+      <h3>searchMode</h3>
+      <table>
+        <tr><th>Value</th><th>Behaviour for multi-term query</th></tr>
+        <tr><td><code>any</code> (default)</td><td>A document matching <strong>any</strong> term is returned (OR). Higher recall.</td></tr>
+        <tr><td><code>all</code></td><td>Document must match <strong>every</strong> term (AND). Higher precision.</td></tr>
+      </table>
+      <pre><span class="c">// "azure devops" - any → matches either word</span>
+{ <span class="k">"search"</span>:<span class="s">"azure devops"</span>, <span class="k">"searchMode"</span>:<span class="s">"any"</span> }
+<span class="c">// all → must contain both words</span>
+{ <span class="k">"search"</span>:<span class="s">"azure devops"</span>, <span class="k">"searchMode"</span>:<span class="s">"all"</span> }</pre>
+      <div class="callout"><span class="t">Combine</span><p><code class="inline">searchMode=all</code> + <code class="inline">queryType=full</code> is the precise-search combo for advanced users.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 21. OrderBy, Size & limits -->
+<section class="slide" data-title="OrderBy, Size & limits">
+  <span class="kicker">19 · Querying</span>
+  <h1><code class="inline">$orderby</code>, <code class="inline">$top/$skip</code> &amp; their limits</h1>
+  <div class="split">
+    <div>
+      <h3>Ordering</h3>
+      <pre><span class="c">// multi-key sort, asc/desc</span>
+{ <span class="k">"orderby"</span>:<span class="s">"amount desc, name asc"</span> }
+
+<span class="c">// by relevance then recency</span>
+{ <span class="k">"search"</span>:<span class="s">"cloud"</span>,
+  <span class="k">"orderby"</span>:<span class="s">"search.score() desc, createdOn desc"</span> }
+
+<span class="c">// by geo distance</span>
+{ <span class="k">"orderby"</span>:<span class="s">"geo.distance(location, geography'POINT(-122 47)') asc"</span> }</pre>
+    </div>
+    <div>
+      <h3>Paging &amp; size limits</h3>
+      <table>
+        <tr><th>Param</th><th>Limit</th></tr>
+        <tr><td><code>$top</code></td><td>Max <strong>1000</strong> per page.</td></tr>
+        <tr><td><code>$skip</code></td><td>Max <strong>100,000</strong>; deep paging is slow.</td></tr>
+        <tr><td>orderby fields</td><td>Up to <strong>32</strong> clauses.</td></tr>
+      </table>
+      <pre>{ <span class="k">"search"</span>:<span class="s">"*"</span>, <span class="k">"top"</span>:<span class="n">25</span>, <span class="k">"skip"</span>:<span class="n">50</span>,
+  <span class="k">"orderby"</span>:<span class="s">"createdOn desc"</span> }</pre>
+      <div class="callout warn"><span class="t">Deep paging</span><p>For exports beyond ~100k, don't use <code class="inline">$skip</code>. Page by a <strong>filter on a sortable key</strong> (range paging) or use the push-based export pattern.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 22. select vs full response -->
+<section class="slide" data-title="$select vs full response">
+  <span class="kicker">20 · Response Shape</span>
+  <h1><code class="inline">$select</code> vs full query - JSON output difference</h1>
+  <div class="split">
+    <div>
+      <h3>Full result (all retrievable fields)</h3>
+      <pre>{
+  <span class="k">"@odata.count"</span>: <span class="n">128</span>,
+  <span class="k">"value"</span>: [
+    {
+      <span class="k">"@search.score"</span>: <span class="n">4.21</span>,
+      <span class="k">"Id"</span>:<span class="s">"op-1024"</span>,
+      <span class="k">"name"</span>:<span class="s">"Cloud Migration"</span>,
+      <span class="k">"status"</span>:<span class="s">"open"</span>,
+      <span class="k">"amount"</span>:<span class="n">75000</span>,
+      <span class="k">"description"</span>:<span class="s">"..."</span>,
+      <span class="k">"createdOn"</span>:<span class="s">"2026-05-01T..."</span>
+    }
+  ]
+}</pre>
+    </div>
+    <div>
+      <h3>With <code class="inline">"select":"Id,name,amount"</code></h3>
+      <pre>{
+  <span class="k">"@odata.count"</span>: <span class="n">128</span>,
+  <span class="k">"value"</span>: [
+    {
+      <span class="k">"@search.score"</span>: <span class="n">4.21</span>,
+      <span class="k">"Id"</span>:<span class="s">"op-1024"</span>,
+      <span class="k">"name"</span>:<span class="s">"Cloud Migration"</span>,
+      <span class="k">"amount"</span>:<span class="n">75000</span>
+    }
+  ]
+}</pre>
+      <div class="callout tip"><span class="t">Key differences</span><p><code class="inline">@search.score</code> &amp; <code class="inline">@odata.*</code> metadata are <strong>always</strong> present. <code class="inline">$select</code> only trims the <em>document</em> fields - smaller payload, faster network, lower serialization cost. It does not change scoring or which docs match.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 23. search.ismatch -->
+<section class="slide" data-title="search.ismatch">
+  <span class="kicker">21 · Advanced Filter</span>
+  <h1>What is <code class="inline">search.ismatch</code> for?</h1>
+  <p class="lead">It lets you run a <strong>full-text search inside a <code class="inline">$filter</code></strong> expression - mixing ranked text matching with boolean filter logic. It is <strong>not</strong> a pagination tool.</p>
+  <div class="split">
+    <div>
+      <h3>Signatures</h3>
+      <pre><span class="c">// search.ismatch(search, [fields], [queryType], [mode])</span>
+$filter=search.ismatch(<span class="s">'cloud'</span>,<span class="s">'name'</span>)
+
+<span class="c">// scoring variant contributes to relevance</span>
+$filter=search.ismatchscoring(<span class="s">'azure'</span>,<span class="s">'name,description'</span>,<span class="s">'full'</span>,<span class="s">'any'</span>)</pre>
+      <h3>Powerful "OR across search+filter"</h3>
+      <pre><span class="c">// name matches 'cloud' OR amount &gt; 100k</span>
+$filter=search.ismatch(<span class="s">'cloud'</span>,<span class="s">'name'</span>)
+        or amount gt <span class="n">100000</span></pre>
+    </div>
+    <div>
+      <div class="card">
+        <h3><code>ismatch</code> vs <code>ismatchscoring</code></h3>
+        <ul>
+          <li><code class="inline">search.ismatch</code> → pure boolean, no score impact.</li>
+          <li><code class="inline">search.ismatchscoring</code> → contributes to <code class="inline">@search.score</code>.</li>
+        </ul>
+      </div>
+      <div class="callout warn"><span class="t">Not for pagination</span><p>Pagination is done with <code class="inline">$top</code>/<code class="inline">$skip</code> (or range paging). <code class="inline">search.ismatch</code> exists to combine full-text relevance with structured filter logic in one expression.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 24. orderby deep dive -->
+<section class="slide" data-title="OrderBy deep dive">
+  <span class="kicker">22 · Sorting Internals</span>
+  <h1>How &amp; where <code class="inline">$orderby</code> is performed</h1>
+  <div class="split">
+    <div>
+      <h3>Where it runs</h3>
+      <ul>
+        <li>Sorting executes on the <strong>search service</strong>, on the shards, <em>after</em> matching but <em>before</em> paging (<code class="inline">$top/$skip</code>).</li>
+        <li>Default order (no <code class="inline">$orderby</code>) is by <strong>relevance</strong> = <code class="inline">search.score()</code> desc.</li>
+        <li>When you specify <code class="inline">$orderby</code>, relevance is replaced unless you include <code class="inline">search.score() desc</code> explicitly.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Constraints</h3>
+      <table>
+        <tr><th>Rule</th><th>Detail</th></tr>
+        <tr><td>Field flag</td><td>Must be <code>sortable</code> = true.</td></tr>
+        <tr><td>Types</td><td>Simple types only - <strong>not</strong> collections or complex fields.</td></tr>
+        <tr><td>Special funcs</td><td><code>search.score()</code> &amp; <code>geo.distance()</code> allowed.</td></tr>
+        <tr><td>Clause count</td><td>Up to 32 sort clauses.</td></tr>
+        <tr><td>Null handling</td><td>Nulls sort first on asc, last on desc.</td></tr>
+      </table>
+      <div class="callout"><span class="t">Tie-breaking</span><p>Always add a stable secondary key (e.g. <code class="inline">Id asc</code>) so equal primary values page deterministically.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 25. POSTMAN EXAMPLES - SECTION INTRO ============ -->
+<section class="slide" data-title="Postman API examples - overview">
+  <span class="kicker">23 · REST Cookbook</span>
+  <h1>Postman API examples - the operations cookbook</h1>
+  <p class="lead">The next slides give a copy-paste recipe per operation. All use <code class="inline">?api-version=2024-07-01</code> and header <code class="inline">api-key: {{admin-key}}</code> (query key for read-only search).</p>
+  <div class="grid c3">
+    <div class="card"><h3>Schema</h3><p class="small">Update schema · Add fields · Update field for error response</p></div>
+    <div class="card"><h3>Data</h3><p class="small">MergeOrUpload · Bulk upload · Delete by id/field · Delete index</p></div>
+    <div class="card"><h3>Query</h3><p class="small">Full-text vs $select · Filter + orderby · Copy index · Downtime</p></div>
+  </div>
+  <div class="callout tip"><span class="t">Base URL variable</span><p>In Postman set <code class="inline">{{base}} = https://{service}.search.windows.net</code> and reuse it in every request.</p></div>
+</section>
+
+<!-- 25a. Create index with Postman -->
+<section class="slide" data-title="Create an index with Postman">
+  <span class="kicker">24 · REST Cookbook</span>
+  <h1>Create a new index with Postman</h1>
+  <p class="lead">All Search REST calls need the service URL, an <code class="inline">api-version</code>, and an <code class="inline">api-key</code> header (admin key for writes).</p>
+  <div class="split">
+    <div>
+      <h3>Request setup</h3>
+      <pre><span class="m">PUT</span> https://{service}.search.windows.net/indexes/opportunities
+     ?api-version=2024-07-01
+
+<span class="c">// Headers</span>
+<span class="k">Content-Type</span>: application/json
+<span class="k">api-key</span>: {{admin-key}}</pre>
+      <div class="callout tip"><span class="t">PUT vs POST</span><p><code class="inline">PUT /indexes/{name}</code> = create-or-update (idempotent). <code class="inline">POST /indexes</code> = create only (fails if it exists).</p></div>
+    </div>
+    <div>
+      <h3>Body</h3>
+      <pre>{
+  <span class="k">"name"</span>: <span class="s">"opportunities"</span>,
+  <span class="k">"fields"</span>: [
+    { <span class="k">"name"</span>:<span class="s">"Id"</span>,     <span class="k">"type"</span>:<span class="s">"Edm.String"</span>, <span class="k">"key"</span>:<span class="n">true</span>,  <span class="k">"filterable"</span>:<span class="n">true</span> },
+    { <span class="k">"name"</span>:<span class="s">"name"</span>,   <span class="k">"type"</span>:<span class="s">"Edm.String"</span>, <span class="k">"searchable"</span>:<span class="n">true</span>, <span class="k">"sortable"</span>:<span class="n">true</span> },
+    { <span class="k">"name"</span>:<span class="s">"status"</span>, <span class="k">"type"</span>:<span class="s">"Edm.String"</span>, <span class="k">"filterable"</span>:<span class="n">true</span>, <span class="k">"facetable"</span>:<span class="n">true</span> },
+    { <span class="k">"name"</span>:<span class="s">"amount"</span>, <span class="k">"type"</span>:<span class="s">"Edm.Double"</span>, <span class="k">"filterable"</span>:<span class="n">true</span>, <span class="k">"sortable"</span>:<span class="n">true</span> },
+    { <span class="k">"name"</span>:<span class="s">"createdOn"</span>,<span class="k">"type"</span>:<span class="s">"Edm.DateTimeOffset"</span>, <span class="k">"filterable"</span>:<span class="n">true</span>, <span class="k">"sortable"</span>:<span class="n">true</span> }
+  ],
+  <span class="k">"suggesters"</span>: [ { <span class="k">"name"</span>:<span class="s">"sg"</span>, <span class="k">"sourceFields"</span>:[<span class="s">"name"</span>] } ]
+}</pre>
+      <p class="small">Response <span class="chip ok">201 Created</span> / <span class="chip ok">204 No Content</span> on update.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 25b. Update Index Schema -->
+<section class="slide" data-title="Postman · Update Index Schema">
+  <span class="kicker">25 · REST Cookbook</span>
+  <h1><span class="method m-put">PUT</span> Update Index Schema</h1>
+  <p class="lead">Use <code class="inline">PUT /indexes/{name}</code> to update non-breaking parts of the schema (add fields, scoring profiles, CORS). Breaking changes require a rebuild.</p>
+  <pre><span class="m">PUT</span> {{base}}/indexes/opportunities?api-version=2024-07-01
+<span class="k">api-key</span>: {{admin-key}}
+<span class="k">Content-Type</span>: application/json
+
+{
+  <span class="k">"name"</span>:<span class="s">"opportunities"</span>,
+  <span class="k">"fields"</span>:[ <span class="c">/* existing fields + any NEW fields */</span> ],
+  <span class="k">"corsOptions"</span>:{ <span class="k">"allowedOrigins"</span>:[<span class="s">"*"</span>], <span class="k">"maxAgeInSeconds"</span>:<span class="n">300</span> },
+  <span class="k">"scoringProfiles"</span>:[ <span class="c">/* ... */</span> ]
+}</pre>
+  <div class="split">
+    <div><div class="callout warn"><span class="t">Allowed here</span><p>Add fields, edit scoring profiles, CORS, suggesters (rebuild), default scoring profile.</p></div></div>
+    <div><div class="callout danger"><span class="t">Rejected (needs rebuild)</span><p>Removing/renaming a field, changing type/analyzer, flipping searchable/filterable/sortable/facetable on existing fields.</p></div></div>
+  </div>
+</section>
+
+<!-- 25b. Add new fields -->
+<section class="slide" data-title="Postman · Add new fields">
+  <span class="kicker">26 · REST Cookbook</span>
+  <h1><span class="method m-put">PUT</span> Add new fields</h1>
+  <p class="lead">Adding fields is <strong>non-breaking</strong> - existing documents simply return null for the new fields until re-indexed. Re-send the <em>complete</em> field list with the additions appended.</p>
+  <pre><span class="m">PUT</span> {{base}}/indexes/opportunities?api-version=2024-07-01
+{
+  <span class="k">"name"</span>:<span class="s">"opportunities"</span>,
+  <span class="k">"fields"</span>:[
+    <span class="c">/* ...all existing fields unchanged... */</span>
+    { <span class="k">"name"</span>:<span class="s">"region"</span>,      <span class="k">"type"</span>:<span class="s">"Edm.String"</span>, <span class="k">"filterable"</span>:<span class="n">true</span>, <span class="k">"facetable"</span>:<span class="n">true</span> },
+    { <span class="k">"name"</span>:<span class="s">"probability"</span>, <span class="k">"type"</span>:<span class="s">"Edm.Double"</span>, <span class="k">"filterable"</span>:<span class="n">true</span>, <span class="k">"sortable"</span>:<span class="n">true</span> }
+  ]
+}</pre>
+  <div class="callout tip"><span class="t">Then backfill</span><p>Run a <code class="inline">mergeOrUpload</code> with just <code class="inline">Id</code> + the new field values to populate existing docs.</p></div>
+</section>
+
+<!-- 25c. Update field for error response -->
+<section class="slide" data-title="Postman · Update field (error response)">
+  <span class="kicker">27 · REST Cookbook</span>
+  <h1>Updating a field &amp; the error you'll see</h1>
+  <p class="lead">If you attempt a <strong>disallowed</strong> field change (e.g. flip <code class="inline">filterable</code> from false→true, or change type), the API rejects it. Here's the exact shape to expect.</p>
+  <div class="split">
+    <div>
+      <h3>The attempted change</h3>
+      <pre><span class="m">PUT</span> {{base}}/indexes/opportunities?api-version=2024-07-01
+{ <span class="c">/* status field changed from filterable:false → true */</span>
+  { <span class="k">"name"</span>:<span class="s">"status"</span>, <span class="k">"type"</span>:<span class="s">"Edm.String"</span>, <span class="k">"filterable"</span>:<span class="n">true</span> }
+}</pre>
+    </div>
+    <div>
+      <h3>Error response <span class="chip danger">400</span></h3>
+      <pre>{
+  <span class="k">"error"</span>:{
+    <span class="k">"code"</span>:<span class="s">""</span>,
+    <span class="k">"message"</span>:<span class="s">"Existing field 'status' cannot be changed. Set 'allowIndexDowntime=true' or rebuild the index."</span>
+  }
+}</pre>
+      <div class="callout warn"><span class="t">Fix</span><p>Either rebuild via an alias swap, or (for analyzer-only changes) retry with <code class="inline">?api-version=2024-07-01&amp;allowIndexDowntime=true</code>.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 25d. MergeOrUpload -->
+<section class="slide" data-title="Postman · MergeOrUpload">
+  <span class="kicker">28 · REST Cookbook</span>
+  <h1><span class="method m-post">POST</span> MergeOrUpload documents</h1>
+  <p class="lead">The <code class="inline">/docs/index</code> endpoint takes a batch with per-document <code class="inline">@search.action</code>. <strong>mergeOrUpload</strong> = update if exists, insert if not (upsert).</p>
+  <pre><span class="m">POST</span> {{base}}/indexes/opportunities/docs/index?api-version=2024-07-01
+<span class="k">api-key</span>: {{admin-key}}
+{
+  <span class="k">"value"</span>:[
+    { <span class="k">"@search.action"</span>:<span class="s">"mergeOrUpload"</span>,
+      <span class="k">"Id"</span>:<span class="s">"op-1024"</span>, <span class="k">"status"</span>:<span class="s">"won"</span>, <span class="k">"amount"</span>:<span class="n">82000</span> },
+    { <span class="k">"@search.action"</span>:<span class="s">"mergeOrUpload"</span>,
+      <span class="k">"Id"</span>:<span class="s">"op-1099"</span>, <span class="k">"name"</span>:<span class="s">"New Deal"</span>, <span class="k">"status"</span>:<span class="s">"open"</span> }
+  ]
+}</pre>
+  <table>
+    <tr><th>Action</th><th>Behaviour</th></tr>
+    <tr><td><code>upload</code></td><td>Insert or full replace.</td></tr>
+    <tr><td><code>merge</code></td><td>Update existing only; <strong>fails</strong> if id missing.</td></tr>
+    <tr><td><code>mergeOrUpload</code></td><td>Upsert - safest for sync jobs.</td></tr>
+    <tr><td><code>delete</code></td><td>Remove by key.</td></tr>
+  </table>
+</section>
+
+<!-- 25e. Bulk upload -->
+<section class="slide" data-title="Postman · Bulk Upload">
+  <span class="kicker">29 · REST Cookbook</span>
+  <h1><span class="method m-post">POST</span> Bulk Upload</h1>
+  <p class="lead">Same <code class="inline">/docs/index</code> endpoint. Batch up to <strong>1000 documents</strong> or <strong>~16 MB</strong> per request, whichever comes first.</p>
+  <pre><span class="m">POST</span> {{base}}/indexes/opportunities/docs/index?api-version=2024-07-01
+{
+  <span class="k">"value"</span>:[
+    { <span class="k">"@search.action"</span>:<span class="s">"upload"</span>, <span class="k">"Id"</span>:<span class="s">"op-001"</span>, <span class="k">"name"</span>:<span class="s">"Alpha"</span>,  <span class="k">"amount"</span>:<span class="n">1000</span> },
+    { <span class="k">"@search.action"</span>:<span class="s">"upload"</span>, <span class="k">"Id"</span>:<span class="s">"op-002"</span>, <span class="k">"name"</span>:<span class="s">"Bravo"</span>,  <span class="k">"amount"</span>:<span class="n">2000</span> },
+    { <span class="k">"@search.action"</span>:<span class="s">"upload"</span>, <span class="k">"Id"</span>:<span class="s">"op-003"</span>, <span class="k">"name"</span>:<span class="s">"Cirrus"</span>, <span class="k">"amount"</span>:<span class="n">3000</span> }
+  ]
+}</pre>
+  <div class="split">
+    <div><div class="callout tip"><span class="t">Partial success = 207</span><p>A <span class="chip warn">207 Multi-Status</span> means some docs failed. Inspect each item's <code class="inline">status</code>/<code class="inline">errorMessage</code> and retry only the failures.</p></div></div>
+    <div><div class="callout warn"><span class="t">Throttling</span><p>On <span class="chip danger">503</span> back off exponentially. Keep batches ~1000 and run a few in parallel per your tier's capacity.</p></div></div>
+  </div>
+</section>
+
+<!-- 25f. Delete by id / field -->
+<section class="slide" data-title="Postman · Delete by id / field">
+  <span class="kicker">30 · REST Cookbook</span>
+  <h1><span class="method m-post">POST</span> Delete - by Id &amp; by any field</h1>
+  <div class="split">
+    <div>
+      <h3>Delete by key (id)</h3>
+      <pre><span class="m">POST</span> {{base}}/indexes/opportunities/docs/index?api-version=2024-07-01
+{
+  <span class="k">"value"</span>:[
+    { <span class="k">"@search.action"</span>:<span class="s">"delete"</span>, <span class="k">"Id"</span>:<span class="s">"op-1024"</span> },
+    { <span class="k">"@search.action"</span>:<span class="s">"delete"</span>, <span class="k">"Id"</span>:<span class="s">"op-1099"</span> }
+  ]
+}</pre>
+      <p class="small">Delete actions only need the <strong>key</strong> field.</p>
+    </div>
+    <div>
+      <h3>Delete by a non-key field</h3>
+      <p>There's no "delete where" call. Do it in two steps:</p>
+      <pre><span class="c">// 1) find the ids to remove</span>
+<span class="m">POST</span> /docs/search
+{ <span class="k">"search"</span>:<span class="s">"*"</span>, <span class="k">"filter"</span>:<span class="s">"status eq 'archived'"</span>,
+  <span class="k">"select"</span>:<span class="s">"Id"</span>, <span class="k">"top"</span>:<span class="n">1000</span> }
+
+<span class="c">// 2) feed those ids into a delete batch</span>
+{ <span class="k">"value"</span>:[ { <span class="k">"@search.action"</span>:<span class="s">"delete"</span>, <span class="k">"Id"</span>:<span class="s">"..."</span> } ] }</pre>
+    </div>
+  </div>
+</section>
+
+<!-- 25g. Delete entire index -->
+<section class="slide" data-title="Postman · Delete entire index">
+  <span class="kicker">31 · REST Cookbook</span>
+  <h1><span class="method m-del">DELETE</span> the entire index</h1>
+  <pre><span class="m">DELETE</span> {{base}}/indexes/opportunities?api-version=2024-07-01
+<span class="k">api-key</span>: {{admin-key}}</pre>
+  <p>Response <span class="chip ok">204 No Content</span> on success, <span class="chip warn">404</span> if it doesn't exist.</p>
+  <div class="callout danger"><span class="t">Irreversible</span><p>This drops the schema <em>and</em> all documents instantly. There is no soft-delete or recycle bin. Always snapshot the schema (GET the index definition) and have a re-index plan before deleting in any shared environment.</p></div>
+  <h3>Safer alternative - clear documents, keep schema</h3>
+  <p>To empty an index without dropping it, delete documents in batches by key. Or rebuild via alias swap and delete the <em>old</em> index only after cutover.</p>
+</section>
+
+<!-- 25h. Full text vs select -->
+<section class="slide" data-title="Postman · Full text vs $select">
+  <span class="kicker">32 · REST Cookbook</span>
+  <h1><span class="method m-post">POST</span> Full-text search - full vs <code class="inline">$select</code></h1>
+  <div class="split">
+    <div>
+      <h3>Full response</h3>
+      <pre><span class="m">POST</span> {{base}}/indexes/opportunities/docs/search?api-version=2024-07-01
+{ <span class="k">"search"</span>:<span class="s">"cloud migration"</span>,
+  <span class="k">"queryType"</span>:<span class="s">"simple"</span>,
+  <span class="k">"count"</span>:<span class="n">true</span> }
+<span class="c">// returns every retrievable field per doc</span></pre>
+    </div>
+    <div>
+      <h3>Trimmed with select</h3>
+      <pre><span class="m">POST</span> {{base}}/indexes/opportunities/docs/search?api-version=2024-07-01
+{ <span class="k">"search"</span>:<span class="s">"cloud migration"</span>,
+  <span class="k">"select"</span>:<span class="s">"Id,name,amount"</span>,
+  <span class="k">"highlight"</span>:<span class="s">"name"</span>,
+  <span class="k">"count"</span>:<span class="n">true</span> }
+<span class="c">// smaller payload; adds @search.highlights</span></pre>
+    </div>
+  </div>
+  <div class="callout tip"><span class="t">Takeaway</span><p>Same matches, same scores - <code class="inline">$select</code> only reduces the returned fields. Use it to cut bandwidth and speed up client rendering.</p></div>
+</section>
+
+<!-- 25i. Filtering & sorting combos -->
+<section class="slide" data-title="Postman · Filter + Sort combos">
+  <span class="kicker">33 · REST Cookbook</span>
+  <h1><span class="method m-post">POST</span> Filtering &amp; sorting - numeric, date, string, collection</h1>
+  <div class="split">
+    <div>
+      <pre><span class="c">// numeric range + sort</span>
+{ <span class="k">"search"</span>:<span class="s">"*"</span>,
+  <span class="k">"filter"</span>:<span class="s">"amount ge 10000 and amount le 90000"</span>,
+  <span class="k">"orderby"</span>:<span class="s">"amount desc"</span> }
+
+<span class="c">// date range + sort</span>
+{ <span class="k">"search"</span>:<span class="s">"*"</span>,
+  <span class="k">"filter"</span>:<span class="s">"createdOn ge 2026-01-01T00:00:00Z"</span>,
+  <span class="k">"orderby"</span>:<span class="s">"createdOn desc"</span> }</pre>
+    </div>
+    <div>
+      <pre><span class="c">// string equality + sort</span>
+{ <span class="k">"search"</span>:<span class="s">"*"</span>,
+  <span class="k">"filter"</span>:<span class="s">"status eq 'open'"</span>,
+  <span class="k">"orderby"</span>:<span class="s">"name asc"</span> }
+
+<span class="c">// collection membership (tags)</span>
+{ <span class="k">"search"</span>:<span class="s">"*"</span>,
+  <span class="k">"filter"</span>:<span class="s">"tags/any(t: t eq 'priority')"</span>,
+  <span class="k">"orderby"</span>:<span class="s">"createdOn desc"</span> }</pre>
+    </div>
+  </div>
+  <div class="callout"><span class="t">Reminder</span><p>Every field in <code class="inline">filter</code> must be <em>filterable</em>; every field in <code class="inline">orderby</code> must be <em>sortable</em> (and cannot be a collection).</p></div>
+</section>
+
+<!-- 25j. Copy index -->
+<section class="slide" data-title="Postman · Copy Index">
+  <span class="kicker">34 · REST Cookbook</span>
+  <h1>Copy an index (clone schema + data)</h1>
+  <p class="lead">There's no single "copy" API - you replicate the schema, then re-index the data. Great for v2 rebuilds, environment promotion, or blue/green.</p>
+  <ol>
+    <li><strong>GET</strong> the source definition and reuse it as the new body.</li>
+    <li><strong>PUT</strong> the new index (rename to <code class="inline">opportunities-v2</code>).</li>
+    <li><strong>Page</strong> source docs and <strong>bulk upload</strong> into the target.</li>
+  </ol>
+  <div class="split">
+    <div>
+      <pre><span class="c">// 1) read source schema</span>
+<span class="m">GET</span> {{base}}/indexes/opportunities?api-version=2024-07-01
+
+<span class="c">// 2) create the clone</span>
+<span class="m">PUT</span> {{base}}/indexes/opportunities-v2?api-version=2024-07-01
+{ <span class="k">"name"</span>:<span class="s">"opportunities-v2"</span>, <span class="k">"fields"</span>:[ <span class="c">/* copied */</span> ] }</pre>
+    </div>
+    <div>
+      <pre><span class="c">// 3a) page source data</span>
+<span class="m">POST</span> {{base}}/indexes/opportunities/docs/search
+{ <span class="k">"search"</span>:<span class="s">"*"</span>, <span class="k">"top"</span>:<span class="n">1000</span>, <span class="k">"orderby"</span>:<span class="s">"Id asc"</span> }
+
+<span class="c">// 3b) upload into the clone</span>
+<span class="m">POST</span> {{base}}/indexes/opportunities-v2/docs/index
+{ <span class="k">"value"</span>:[ { <span class="k">"@search.action"</span>:<span class="s">"upload"</span>, <span class="c">/* doc */</span> } ] }</pre>
+    </div>
+  </div>
+</section>
+
+<!-- 25k. Downtime -->
+<section class="slide" data-title="Postman · Downtime">
+  <span class="kicker">35 · REST Cookbook</span>
+  <h1>Applying downtime - when &amp; how</h1>
+  <p class="lead">Some in-place schema updates (notably analyzer changes) need <code class="inline">allowIndexDowntime=true</code>. During this window the index is briefly <strong>offline for queries</strong> while it reconfigures.</p>
+  <pre><span class="m">PUT</span> {{base}}/indexes/opportunities?api-version=2024-07-01&amp;<span class="k">allowIndexDowntime=true</span>
+<span class="k">api-key</span>: {{admin-key}}
+{ <span class="c">/* schema with analyzer/normalizer changes */</span> }</pre>
+  <table>
+    <tr><th>Operation</th><th>Downtime?</th></tr>
+    <tr><td>Add fields, scoring profiles, CORS</td><td><span class="chip ok">No</span></td></tr>
+    <tr><td>Add/modify analyzers, normalizers, tokenizers on existing fields</td><td><span class="chip warn">Yes - needs the flag</span></td></tr>
+    <tr><td>Change field type / delete field</td><td><span class="chip danger">Full rebuild (use alias swap)</span></td></tr>
+  </table>
+  <div class="callout tip"><span class="t">When to apply</span><p>Schedule downtime changes in a maintenance window, or avoid downtime entirely with the <strong>alias + v2</strong> blue/green pattern so users never hit an offline index.</p></div>
+</section>
+
+<!-- 26. Special characters -->
+<section class="slide" data-title="Special characters in filters">
+  <span class="kicker">36 · Edge Cases</span>
+  <h1>Special characters in Azure Search filters</h1>
+  <p class="lead">Special characters get stripped by tokenizers (search) or must be escaped (filters). The goal: ensure user input like <code class="inline">O'Brien</code>, <code class="inline">A&amp;B</code>, <code class="inline">50%</code> isn't silently discarded.</p>
+  <div class="split">
+    <div>
+      <h3>In <code class="inline">$filter</code> string literals</h3>
+      <ul>
+        <li>Single quote <code>'</code> → double it: <code class="inline">'O''Brien'</code>.</li>
+        <li>Other chars are literal inside quotes (no HTML/URL meaning) - but the whole URL must be URL-encoded.</li>
+      </ul>
+      <pre><span class="c">// name = O'Brien &amp; Sons</span>
+$filter=name eq <span class="s">'O''Brien &amp; Sons'</span></pre>
+    </div>
+    <div>
+      <h3>In <code class="inline">search</code> (Lucene) queries</h3>
+      <p>Escape reserved chars with <code>\</code>:</p>
+      <pre><span class="c">// reserved: + - &amp;&amp; || ! ( ) { } [ ] ^ " ~ * ? : \ /</span>
+search=<span class="s">"C\+\+ developer"</span>&queryType=<span class="s">full</span></pre>
+      <div class="callout tip"><span class="t">Preserve at index time</span><p>Use a <strong>mapping char filter</strong> (<code class="inline">C#=&gt;csharp</code>, <code class="inline">&amp;=&gt;and</code>) or a <strong>keyword analyzer</strong> so meaningful symbols survive tokenizing instead of being dropped.</p></div>
+    </div>
+  </div>
+  <div class="callout warn"><span class="t">Golden rule</span><p>URL-encode the whole query string, double single-quotes in filter literals, and backslash-escape Lucene specials in <code class="inline">search</code>. Do those three and special characters won't get lost.</p></div>
+</section>
+
+<!-- 27. Filter operators -->
+<section class="slide" data-title="Filter operators">
+  <span class="kicker">37 · Reference</span>
+  <h1>Filter operators - the full toolkit</h1>
+  <table>
+    <tr><th>Intent</th><th>Operator / function</th><th>Example</th></tr>
+    <tr><td>Equal</td><td><code>eq</code></td><td><code>status eq 'won'</code></td></tr>
+    <tr><td>Not equal</td><td><code>ne</code></td><td><code>status ne 'lost'</code></td></tr>
+    <tr><td>Less than</td><td><code>lt</code> / <code>le</code></td><td><code>amount lt 1000</code></td></tr>
+    <tr><td>Greater than</td><td><code>gt</code> / <code>ge</code></td><td><code>amount ge 5000</code></td></tr>
+    <tr><td>Contains</td><td><code>search.ismatch</code> or <code>contains()</code></td><td><code>search.ismatch('cloud','name')</code></td></tr>
+    <tr><td>Does not contain</td><td><code>not search.ismatch(...)</code></td><td><code>not search.ismatch('legacy','name')</code></td></tr>
+    <tr><td>Starts with</td><td><code>startswith()</code></td><td><code>startswith(name,'Op')</code></td></tr>
+    <tr><td>Ends with</td><td><code>endswith()</code></td><td><code>endswith(name,'2026')</code></td></tr>
+    <tr><td>Is null</td><td><code>eq null</code></td><td><code>closedOn eq null</code></td></tr>
+    <tr><td>Is not null</td><td><code>ne null</code></td><td><code>closedOn ne null</code></td></tr>
+  </table>
+  <div class="callout"><span class="t">Performance note</span><p><code class="inline">startswith/endswith/contains</code> are string functions evaluated per-doc - fine on modest sets, but for large indexes prefer <code class="inline">search.ismatch</code> (uses the inverted index) or an edge-ngram field for prefix matching.</p></div>
+</section>
+
+<!-- 28. in keyword -->
+<section class="slide" data-title="The 'in' operator">
+  <span class="kicker">38 · Reference</span>
+  <h1>The <code class="inline">search.in</code> / <code class="inline">in</code> operator for ranges &amp; lists</h1>
+  <p class="lead">To test membership against a set of values, use <code class="inline">search.in</code> - far cleaner and faster than chaining many <code class="inline">or</code> clauses.</p>
+  <div class="split">
+    <div>
+      <h3>List membership</h3>
+      <pre><span class="c">// status in a set</span>
+$filter=search.in(status, <span class="s">'won,open,negotiating'</span>)
+
+<span class="c">// custom delimiter (values contain commas)</span>
+$filter=search.in(region, <span class="s">'EMEA|APAC|NA'</span>, <span class="s">'|'</span>)</pre>
+      <h3>Id set membership</h3>
+      <pre>$filter=search.in(Id, <span class="s">'op-1,op-2,op-3'</span>)</pre>
+    </div>
+    <div>
+      <div class="card">
+        <h3>Ranges vs sets</h3>
+        <p><code class="inline">search.in</code> checks a <strong>discrete set</strong>. For a continuous <strong>range</strong> of ids/values use comparison operators:</p>
+        <pre>$filter=Id ge <span class="s">'op-1000'</span> and Id le <span class="s">'op-1999'</span></pre>
+        <p class="small">(String range works lexicographically - pad numeric ids for correct ordering.)</p>
+      </div>
+      <div class="callout tip"><span class="t">Why use it</span><p><code class="inline">search.in</code> scales to <strong>thousands</strong> of values in one filter and is optimized internally - ideal for "these 500 account ids" style queries.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 30. Admin vs Query key -->
+<section class="slide" data-title="Admin vs Query Key">
+  <span class="kicker">39 · Security</span>
+  <h1>Admin key vs Query key - which for what?</h1>
+  <p class="lead">API keys are passed in the <code class="inline">api-key</code> header. <strong>Admin keys</strong> can do everything (read + write + manage). <strong>Query keys</strong> are read-only and safe to ship to clients/browsers.</p>
+  <div class="split">
+    <div>
+      <table>
+        <tr><th>Operation</th><th>Key</th></tr>
+        <tr><td>Create / update / delete index</td><td><span class="chip danger">Admin</span></td></tr>
+        <tr><td>Upload / merge / delete documents</td><td><span class="chip danger">Admin</span></td></tr>
+        <tr><td>Create indexers, data sources, skillsets</td><td><span class="chip danger">Admin</span></td></tr>
+        <tr><td>Search / suggest / autocomplete</td><td><span class="chip ok">Query</span></td></tr>
+        <tr><td>Lookup a document by key</td><td><span class="chip ok">Query</span></td></tr>
+      </table>
+      <div class="callout warn"><span class="t">Golden rule</span><p>Never embed an <strong>admin key</strong> in front-end / mobile code. Use a <strong>query key</strong> there (or better, RBAC + backend proxy). There are up to 2 admin keys (for rotation) and up to 50 query keys per service.</p></div>
+    </div>
+    <div>
+      <h3>Postman - write needs Admin key</h3>
+      <pre><span class="m">POST</span> {{base}}/indexes/opportunities/docs/index?api-version=2024-07-01
+<span class="k">Content-Type</span>: application/json
+<span class="k">api-key</span>: {{admin-key}}      <span class="c">// ✅ admin required to write</span>
+{ <span class="k">"value"</span>:[ { <span class="k">"@search.action"</span>:<span class="s">"mergeOrUpload"</span>,
+  <span class="k">"Id"</span>:<span class="s">"op-1"</span>, <span class="k">"status"</span>:<span class="s">"won"</span> } ] }</pre>
+      <h3>Postman - read uses Query key</h3>
+      <pre><span class="m">POST</span> {{base}}/indexes/opportunities/docs/search?api-version=2024-07-01
+<span class="k">Content-Type</span>: application/json
+<span class="k">api-key</span>: {{query-key}}      <span class="c">// ✅ query key is enough to search</span>
+{ <span class="k">"search"</span>:<span class="s">"cloud"</span>, <span class="k">"select"</span>:<span class="s">"Id,name"</span> }</pre>
+      <div class="callout danger"><span class="t">Wrong key = 403</span><p>Using a <strong>query key</strong> for a write returns <span class="chip danger">403 Forbidden</span>. Get keys via the portal or the Management API; rotate the second admin key with zero downtime.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 31. Indexers -->
+<section class="slide" data-title="Indexers">
+  <span class="kicker">40 · Automation</span>
+  <h1>Indexers - automated data ingestion</h1>
+  <p class="lead">An <strong>indexer</strong> is a managed crawler that pulls data from a supported <strong>data source</strong> (Azure SQL, Cosmos DB, Blob/ADLS, Table Storage) and pushes it into an index - on demand or on a <strong>schedule</strong> - with change tracking, so you don't hand-code the "push" pipeline.</p>
+  <div class="split">
+    <div>
+      <h3>Three pieces to wire up</h3>
+      <ol>
+        <li><strong>Data source</strong> - where the data lives + change-detection policy.</li>
+        <li><strong>Index</strong> - the target schema.</li>
+        <li><strong>Indexer</strong> - maps source → index fields, schedule, options.</li>
+      </ol>
+      <h3>1 · Create the data source</h3>
+      <pre><span class="m">POST</span> {{base}}/datasources?api-version=2024-07-01
+<span class="k">api-key</span>: {{admin-key}}
+{ <span class="k">"name"</span>:<span class="s">"opp-sql-ds"</span>,
+  <span class="k">"type"</span>:<span class="s">"azuresql"</span>,
+  <span class="k">"credentials"</span>:{ <span class="k">"connectionString"</span>:<span class="s">"{{sql-conn}}"</span> },
+  <span class="k">"container"</span>:{ <span class="k">"name"</span>:<span class="s">"Opportunities"</span> },
+  <span class="k">"dataChangeDetectionPolicy"</span>:{
+    <span class="k">"@odata.type"</span>:<span class="s">"#Microsoft.Azure.Search.HighWaterMarkChangeDetectionPolicy"</span>,
+    <span class="k">"highWaterMarkColumnName"</span>:<span class="s">"rowVersion"</span> } }</pre>
+    </div>
+    <div>
+      <h3>2 · Create the indexer (schedule)</h3>
+      <pre><span class="m">POST</span> {{base}}/indexers?api-version=2024-07-01
+<span class="k">api-key</span>: {{admin-key}}
+{ <span class="k">"name"</span>:<span class="s">"opp-indexer"</span>,
+  <span class="k">"dataSourceName"</span>:<span class="s">"opp-sql-ds"</span>,
+  <span class="k">"targetIndexName"</span>:<span class="s">"opportunities"</span>,
+  <span class="k">"schedule"</span>:{ <span class="k">"interval"</span>:<span class="s">"PT1H"</span> },   <span class="c">// hourly</span>
+  <span class="k">"fieldMappings"</span>:[
+    { <span class="k">"sourceFieldName"</span>:<span class="s">"OpportunityId"</span>, <span class="k">"targetFieldName"</span>:<span class="s">"Id"</span> } ] }</pre>
+      <h3>3 · Run &amp; monitor</h3>
+      <pre><span class="c">// run now (on demand)</span>
+<span class="m">POST</span> {{base}}/indexers/opp-indexer/run?api-version=2024-07-01
+<span class="c">// check status / last result / errors</span>
+<span class="m">GET</span>  {{base}}/indexers/opp-indexer/status?api-version=2024-07-01
+<span class="c">// reset (force full re-index next run)</span>
+<span class="m">POST</span> {{base}}/indexers/opp-indexer/reset?api-version=2024-07-01</pre>
+      <div class="callout tip"><span class="t">Push vs Pull</span><p><strong>Indexer (pull)</strong> = zero-code, scheduled, change-tracked - best for DB/Blob sources. <strong>Push API</strong> (<code class="inline">/docs/index</code>) = full control, real-time, any source - best for custom apps &amp; event-driven sync.</p></div>
+    </div>
+  </div>
+  <div class="callout warn"><span class="t">Enable / disable</span><p>An indexer runs on its schedule once created. Pause it with <code class="inline">"disabled": true</code> in its definition; deletions need a <strong>soft-delete change detection policy</strong> so removed rows are also removed from the index.</p></div>
+</section>
+
+<!-- 32. Extras / commonly missed -->
+<section class="slide" data-title="Commonly missed topics">
+  <span class="kicker">41 · Round-up</span>
+  <h1>Things often missed - with examples</h1>
+  <div class="grid c2">
+    <div class="card">
+      <h3>🔑 Keys &amp; security</h3>
+      <p class="small"><strong>Admin key</strong> = full control (writes). <strong>Query key</strong> = read-only. Prefer <strong>RBAC / managed identity</strong> over keys in production; scope query keys to the client.</p>
+    </div>
+    <div class="card">
+      <h3>🌐 CORS</h3>
+      <p class="small">Browser apps calling Search directly need <code class="inline">corsOptions.allowedOrigins</code> on the index. Never embed an admin key in front-end code.</p>
+    </div>
+    <div class="card">
+      <h3>🔁 Synonym maps</h3>
+      <p class="small">Create a synonym map (<code class="inline">laptop, notebook</code>) and attach to a field's <code class="inline">synonymMaps</code> - expands recall without re-indexing text.</p>
+    </div>
+    <div class="card">
+      <h3>🧮 Complex types</h3>
+      <p class="small">Model nested objects/arrays (line items, addresses). Filter with <code class="inline">field/subfield</code> and <code class="inline">any/all</code>.</p>
+    </div>
+    <div class="card">
+      <h3>📈 Monitoring</h3>
+      <p class="small">Watch <code class="inline">/indexes/{name}/stats</code> for doc count &amp; storage; enable diagnostic logs for throttling &amp; latency.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 33. Best practices -->
+<section class="slide" data-title="Best practices">
+  <span class="kicker">42 · Playbook</span>
+  <h1>Design &amp; operations best practices</h1>
+  <div class="split">
+    <div>
+      <h3>Schema</h3>
+      <ul>
+        <li>Enable only the attributes each field actually needs (cost &amp; speed).</li>
+        <li>Normalize filter/sort strings to lower-case (loader + normalizer).</li>
+        <li>Never make the key <code class="inline">searchable</code>; keep ids opaque &amp; encoded.</li>
+        <li>Pick analyzers per field intent (keyword vs language vs ngram).</li>
+      </ul>
+      <h3>Querying</h3>
+      <ul>
+        <li>Filter to narrow, search to rank; add <code class="inline">$select</code> to trim payloads.</li>
+        <li>Always add a tie-break sort key (<code class="inline">Id asc</code>).</li>
+        <li>Use <code class="inline">search.in</code> for large value sets; avoid deep <code class="inline">$skip</code>.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Operations</h3>
+      <ul>
+        <li>Batch writes (~1000 docs); handle <span class="chip warn">207</span>/<span class="chip danger">503</span> with retry &amp; backoff.</li>
+        <li>Snapshot the index definition before any destructive change.</li>
+        <li>Use RBAC/managed identity; keep admin keys server-side only.</li>
+      </ul>
+      <div class="callout tip"><span class="t">One-line summary</span><p>Model fields for their job, analyze text intentionally, filter+rank deliberately, and evolve indexes behind an alias.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 34. Reference hub -->
+<section class="slide" data-title="Reference Hub">
+  <span class="kicker">43 · Appendix</span>
+  <h1>Reference hub - docs, links, and code samples</h1>
+  <p class="lead">This appendix gathers key Microsoft references and practical sample repositories you can use after the demo for implementation, troubleshooting, and deeper learning.</p>
+  <div class="grid c3">
+    <div class="card">
+      <h3>Platform docs</h3>
+      <p class="small">Core product guidance, service limits, and index design recommendations.</p>
+      <p><a href="https://learn.microsoft.com/azure/search/search-what-is-azure-search" target="_blank" rel="noopener">What is Azure AI Search</a></p>
+      <p><a href="https://learn.microsoft.com/azure/search/search-how-to-create-search-index" target="_blank" rel="noopener">Create an index</a></p>
+      <p><a href="https://learn.microsoft.com/azure/search/search-limits-quotas-capacity" target="_blank" rel="noopener">Limits, quotas, and capacity</a></p>
+    </div>
+    <div class="card">
+      <h3>API and query docs</h3>
+      <p class="small">REST contracts and query syntax references for production APIs.</p>
+      <p><a href="https://learn.microsoft.com/rest/api/searchservice/" target="_blank" rel="noopener">Search service REST API</a></p>
+      <p><a href="https://learn.microsoft.com/azure/search/search-query-odata-filter" target="_blank" rel="noopener">OData $filter syntax</a></p>
+      <p><a href="https://learn.microsoft.com/azure/search/query-lucene-syntax" target="_blank" rel="noopener">Lucene query syntax</a></p>
+    </div>
+    <div class="card">
+      <h3>SDK and samples</h3>
+      <p class="small">C#, Python, and JavaScript sample code to accelerate implementation.</p>
+      <p><a href="https://learn.microsoft.com/dotnet/api/overview/azure/search.documents-readme" target="_blank" rel="noopener">.NET SDK overview</a></p>
+      <p><a href="https://github.com/Azure-Samples/azure-search-dotnet-samples" target="_blank" rel="noopener">Azure Search .NET samples</a></p>
+      <p><a href="https://github.com/Azure/azure-sdk-for-net/tree/main/sdk/search/Azure.Search.Documents/samples" target="_blank" rel="noopener">Azure.Search.Documents samples</a></p>
+    </div>
+  </div>
+</section>
+
+<!-- 35. Microsoft documentation map -->
+<section class="slide" data-title="Reference - Microsoft docs map">
+  <span class="kicker">44 · Appendix</span>
+  <h1>Microsoft documentation map</h1>
+  <p class="lead">Use this map when you need official guidance for index design, analyzers, query behavior, and production operations.</p>
+  <div class="grid c3">
+    <div class="card">
+      <h3>Index and schema design</h3>
+      <p class="small">Core documentation for index creation, schema changes, and safer rollout patterns.</p>
+      <p><a href="https://learn.microsoft.com/azure/search/search-how-to-create-search-index" target="_blank" rel="noopener">Create and manage indexes</a></p>
+      <p><a href="https://learn.microsoft.com/azure/search/search-howto-reindex" target="_blank" rel="noopener">Reindex and schema evolution</a></p>
+      <p><a href="https://learn.microsoft.com/azure/search/search-how-to-alias" target="_blank" rel="noopener">Index aliases for zero-downtime swaps</a></p>
+    </div>
+    <div class="card">
+      <h3>Text analysis and relevance</h3>
+      <p class="small">Analyzer, normalizer, and scoring references that explain why results rank the way they do.</p>
+      <p><a href="https://learn.microsoft.com/azure/search/search-analyzers" target="_blank" rel="noopener">Analyzers overview</a></p>
+      <p><a href="https://learn.microsoft.com/azure/search/index-add-custom-analyzers" target="_blank" rel="noopener">Custom analyzers, tokenizers, filters</a></p>
+      <p><a href="https://learn.microsoft.com/azure/search/index-add-scoring-profiles" target="_blank" rel="noopener">Scoring profiles and boosting</a></p>
+    </div>
+    <div class="card">
+      <h3>Queries and operations</h3>
+      <p class="small">API and runtime guidance for filtering, paging, security, and monitoring.</p>
+      <p><a href="https://learn.microsoft.com/azure/search/search-query-overview" target="_blank" rel="noopener">Query fundamentals</a></p>
+      <p><a href="https://learn.microsoft.com/azure/search/search-pagination-page-layout" target="_blank" rel="noopener">Paging, top, skip, and result shaping</a></p>
+      <p><a href="https://learn.microsoft.com/azure/search/search-monitor-logs" target="_blank" rel="noopener">Monitoring and diagnostic logs</a></p>
+    </div>
+  </div>
+</section>
+
+<!-- 36. Code samples map -->
+<section class="slide" data-title="Reference - code samples">
+  <span class="kicker">45 · Appendix</span>
+  <h1>Code samples map</h1>
+  <p class="lead">Use these sample repositories and starter assets to move from reference reading to hands-on implementation quickly.</p>
+  <div class="grid c3">
+    <div class="card">
+      <h3>Official SDK samples</h3>
+      <p class="small">End-to-end sample implementations by language.</p>
+      <p><a href="https://github.com/Azure-Samples/azure-search-dotnet-samples" target="_blank" rel="noopener">C# end-to-end samples</a></p>
+      <p><a href="https://github.com/Azure-Samples/azure-search-python-samples" target="_blank" rel="noopener">Python samples</a></p>
+      <p><a href="https://github.com/Azure-Samples/azure-search-javascript-samples" target="_blank" rel="noopener">JavaScript and TypeScript samples</a></p>
+    </div>
+    <div class="card">
+      <h3>REST and quickstarts</h3>
+      <p class="small">Useful links when you are testing API contracts and building demos.</p>
+      <p><a href="https://learn.microsoft.com/rest/api/searchservice/" target="_blank" rel="noopener">REST operation reference</a></p>
+      <p><a href="https://learn.microsoft.com/azure/search/samples-python" target="_blank" rel="noopener">Quickstarts and tutorial starters</a></p>
+      <p><a href="https://learn.microsoft.com/azure/search/search-get-started-portal" target="_blank" rel="noopener">Portal quickstart for demos</a></p>
+    </div>
+    <div class="card">
+      <h3>How to use this appendix</h3>
+      <p class="small">Follow this order to get productive faster.</p>
+      <p>1) Review index and query docs.</p>
+      <p>2) Run Postman requests for CRUD and search flows.</p>
+      <p>3) Move to SDK samples for production patterns.</p>
+    </div>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <h3>Starter Postman collection for Azure AI Search</h3>
+    <p class="small">Import this collection first to explore index creation, document upload, and search queries in minutes.</p>
+    <p><a href="OVP/Docs/Postman/Azure-AI-Search-Demo-Full.postman_collection.json" target="_blank" rel="noopener">Open starter collection: Azure-AI-Search-Demo-Full.postman_collection.json</a></p>
+    <pre>{
+  <span class="k">"info"</span>: {
+    <span class="k">"name"</span>: <span class="s">"Azure AI Search - Starter"</span>,
+    <span class="k">"schema"</span>: <span class="s">"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"</span>
+  },
+  <span class="k">"variable"</span>: [
+    { <span class="k">"key"</span>: <span class="s">"base"</span>, <span class="k">"value"</span>: <span class="s">"https://{{service}}.search.windows.net"</span> },
+    { <span class="k">"key"</span>: <span class="s">"api-version"</span>, <span class="k">"value"</span>: <span class="s">"2024-07-01"</span> },
+    { <span class="k">"key"</span>: <span class="s">"admin-key"</span>, <span class="k">"value"</span>: <span class="s">"&lt;replace-with-admin-key&gt;"</span> }
+  ],
+  <span class="k">"item"</span>: [
+    { <span class="k">"name"</span>: <span class="s">"Create Index"</span> },
+    { <span class="k">"name"</span>: <span class="s">"Upload Documents"</span> },
+    { <span class="k">"name"</span>: <span class="s">"Search"</span> }
+  ]
+}</pre>
+  </div>
+  <div class="callout tip"><span class="t">Presenter tip</span><p>Keep this section as the final appendix: pause here during Q&amp;A and open the links live as needed.</p></div>
+</section>
+
+<!-- 37. Thanks -->
+<section class="slide" data-title="Thank you">
+  <div class="cover">
+    <span class="kicker" style="justify-self:center">End of Demo</span>
+    <div class="big">Thank you</div>
+    <p>You now have an end-to-end map of Azure AI Search - from index anatomy and text analysis to OData querying and the full Postman REST cookbook.</p>
+    <div class="meta">· Switch themes anytime with the swatches top-right · Press <b>P</b>-friendly print via your browser</div>
+  </div>
+</section>
+
+</main>
+
+<!-- ================= BOTTOM NAV ================= -->
+<nav class="nav">
+  <button class="navbtn" id="prevBtn">‹ Prev</button>
+  <button class="navbtn" id="nextBtn">Next ›</button>
+  <span class="counter"><span id="cur">1</span> / <span id="total">1</span></span>
+  <span class="spacer"></span>
+  <span class="title-mini" id="titleMini"></span>
+</nav>
+
+<script>
+(function () {
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var idx = 0;
+  var curEl = document.getElementById('cur');
+  var totalEl = document.getElementById('total');
+  var bar = document.getElementById('bar');
+  var titleMini = document.getElementById('titleMini');
+  var prevBtn = document.getElementById('prevBtn');
+  var nextBtn = document.getElementById('nextBtn');
+
+  totalEl.textContent = slides.length;
+
+  function render() {
+    slides.forEach(function (s, i) { s.classList.toggle('active', i === idx); });
+    curEl.textContent = idx + 1;
+    bar.style.width = ((idx) / (slides.length - 1) * 100) + '%';
+    titleMini.textContent = slides[idx].getAttribute('data-title') || '';
+    prevBtn.disabled = idx === 0;
+    nextBtn.disabled = idx === slides.length - 1;
+    window.scrollTo({ top: 0, behavior: 'auto' });
+    location.hash = 's' + (idx + 1);
+  }
+  function go(n) { idx = Math.max(0, Math.min(slides.length - 1, n)); render(); }
+
+  prevBtn.addEventListener('click', function () { go(idx - 1); });
+  nextBtn.addEventListener('click', function () { go(idx + 1); });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+    if (e.key === 'ArrowRight' || e.key === 'PageDown') { go(idx + 1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { go(idx - 1); }
+    else if (e.key === 'Home') { go(0); }
+    else if (e.key === 'End') { go(slides.length - 1); }
+  });
+
+  // Theme switching
+  document.querySelectorAll('.swatch').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.body.setAttribute('data-theme', b.getAttribute('data-set'));
+      document.querySelectorAll('.swatch').forEach(function (x) { x.classList.remove('active'); });
+      b.classList.add('active');
+    });
+  });
+
+  // Build Agenda / TOC
+  var toc = slides.map(function (s, i) {
+    return { i: i, title: s.getAttribute('data-title') || ('Slide ' + (i + 1)) };
+  });
+  function buildToc(container) {
+    container.innerHTML = toc.map(function (t) {
+      return '<a href="#s' + (t.i + 1) + '" data-go="' + t.i + '"><b>' +
+        String(t.i + 1).padStart(2, '0') + '</b>' + t.title + '</a>';
+    }).join('');
+    container.querySelectorAll('a').forEach(function (a) {
+      a.addEventListener('click', function (e) {
+        e.preventDefault();
+        go(parseInt(a.getAttribute('data-go'), 10));
+        overlay.classList.remove('open');
+      });
+    });
+  }
+  buildToc(document.getElementById('tocList'));
+  buildToc(document.getElementById('tocInline'));
+
+  // Overlay
+  var overlay = document.getElementById('overlay');
+  document.getElementById('agendaBtn').addEventListener('click', function () { overlay.classList.add('open'); });
+  document.getElementById('closeOverlay').addEventListener('click', function () { overlay.classList.remove('open'); });
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) overlay.classList.remove('open'); });
+
+  // Deep-link on load
+  var m = /^#s(\d+)$/.exec(location.hash);
+  if (m) { idx = Math.max(0, Math.min(slides.length - 1, parseInt(m[1], 10) - 1)); }
+  render();
+})();
+</script>
+</body>
+</html>
